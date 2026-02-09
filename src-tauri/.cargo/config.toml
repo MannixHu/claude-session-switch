@@ -1,0 +1,7 @@
+[build]
+# macOS linker workaround for -lSystem issue
+rustflags = ["-l", "framework=System"]
+
+[target.aarch64-apple-darwin]
+# Apple Silicon specific linker configuration
+rustflags = ["-l", "framework=System"]

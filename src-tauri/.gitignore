@@ -1,0 +1,15 @@
+# Rust
+/target
+Cargo.lock
+**/*.rs.bk
+
+# IDEs
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Swift build artifacts
+swift/SwiftTermBridge/.build/

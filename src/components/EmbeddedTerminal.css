@@ -1,0 +1,9 @@
+.embedded-terminal {
+  position: absolute;
+  inset: 42px 0 0 0;
+  overflow: hidden;
+}
+.embedded-terminal .xterm {
+  height: 100%;
+  padding: 4px;
+}
