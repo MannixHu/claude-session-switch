@@ -1,7 +1,7 @@
 {
-  "productName": "Claude Session Manager",
+  "productName": "Claude Session Switch",
   "version": "0.1.0",
-  "identifier": "com.cloudcode.sessionmanager",
+  "identifier": "com.cloudcode.sessionswitch",
   "build": {
     "beforeDevCommand": "npm run dev:ui",
     "devUrl": "http://localhost:5173",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "Claude Session Manager",
+        "title": "Claude Session Switch",
         "width": 1200,
         "height": 800,
         "resizable": true,

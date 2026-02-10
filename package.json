@@ -1,13 +1,13 @@
 {
-  "name": "claude-session-manager",
+  "name": "claude-session-switch",
   "version": "0.1.0",
   "private": true,
-  "description": "Manager for Claude sessions with embedded terminal and resume workflow",
+  "description": "Switch for Claude sessions with embedded terminal and resume workflow",
   "type": "module",
   "license": "MIT",
   "keywords": [
     "claude",
-    "session-manager",
+    "session-switch",
     "tauri",
     "xterm",
     "terminal",

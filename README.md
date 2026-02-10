@@ -1,4 +1,4 @@
-# Claude Session Manager
+# Claude Session Switch
 
 > 面向 Claude Code / Claude CLI 的轻量桌面会话管理器。  
 > 用 **Tauri + Rust + React + xterm.js** 提供“GUI 管理 + CLI 执行”的混合工作流。
@@ -9,7 +9,7 @@
 
 ## 项目简介
 
-`Claude Session Manager` 关注的核心不是替代命令行，而是把「会话管理」这件事做得更直观、更可恢复：
+`Claude Session Switch` 关注的核心不是替代命令行，而是把「会话管理」这件事做得更直观、更可恢复：
 
 - 用 GUI 组织项目和会话层级
 - 用原生终端与 Claude CLI 执行真实任务

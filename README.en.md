@@ -1,6 +1,6 @@
-# Claude Session Manager
+# Claude Session Switch
 
-> A lightweight desktop session manager for Claude Code / Claude CLI.  
+> A lightweight desktop session switch for Claude Code / Claude CLI.  
 > Built with **Tauri + Rust + React + xterm.js** for a hybrid workflow: GUI orchestration + native CLI execution.
 
 English (current) | [中文](./README.md)
@@ -9,7 +9,7 @@ English (current) | [中文](./README.md)
 
 ## Overview
 
-`Claude Session Manager` is not trying to replace your CLI workflow.
+`Claude Session Switch` is not trying to replace your CLI workflow.
 It focuses on making session management visual, recoverable, and automation-friendly:
 
 - Organize projects and sessions with a clear UI hierarchy

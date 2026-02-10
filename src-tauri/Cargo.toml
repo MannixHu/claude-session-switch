@@ -1,11 +1,11 @@
 [package]
-name = "claude-session-manager"
+name = "claude-session-switch"
 version = "0.1.0"
-description = "Claude Session Manager built with Tauri and Rust"
+description = "Claude Session Switch built with Tauri and Rust"
 authors = ["Claude Code Team"]
 license = "MIT"
 repository = ""
-default-run = "claude-session-manager"
+default-run = "claude-session-switch"
 edition = "2021"
 rust-version = "1.70"
 

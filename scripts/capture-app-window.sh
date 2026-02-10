@@ -8,7 +8,7 @@ Usage:
   capture-app-window.sh --list
 
 Examples:
-  capture-app-window.sh "Claude Session Manager" /tmp/ccsm.png
+  capture-app-window.sh "Claude Session Switch" /tmp/ccsm.png
   capture-app-window.sh Terminal
   capture-app-window.sh --list
 EOF
@@ -195,7 +195,7 @@ if [[ "${1:-}" == "--list" ]]; then
   exit 0
 fi
 
-APP_NAME="${1:-Claude Session Manager}"
+APP_NAME="${1:-Claude Session Switch}"
 OUTPUT_PATH="${2:-$PWD/tmp/ccsm-window-$(date +%Y%m%d-%H%M%S).png}"
 mkdir -p "$(dirname "$OUTPUT_PATH")"
 

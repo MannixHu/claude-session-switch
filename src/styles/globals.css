@@ -45,7 +45,7 @@ body {
 }
 
 .project-dashboard,
-.session-manager {
+.session-switch {
   height: 100%;
   display: flex;
   flex-direction: column;
