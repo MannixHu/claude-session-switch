@@ -1,5 +1,5 @@
 {
-  "productName": "CC Session Switch",
+  "productName": "Claude Session Manager",
   "version": "0.1.0",
   "identifier": "com.cloudcode.sessionmanager",
   "build": {
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "CC Session Switch",
+        "title": "Claude Session Manager",
         "width": 1200,
         "height": 800,
         "resizable": true,

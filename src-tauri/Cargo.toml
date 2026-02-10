@@ -1,11 +1,11 @@
 [package]
-name = "cc-session-switch"
+name = "claude-session-manager"
 version = "0.1.0"
-description = "CC Session Switch - Claude Code session manager"
+description = "Claude Session Manager built with Tauri and Rust"
 authors = ["Claude Code Team"]
 license = "MIT"
 repository = ""
-default-run = "cc-session-switch"
+default-run = "claude-session-manager"
 edition = "2021"
 rust-version = "1.70"
 
@@ -18,12 +18,14 @@ serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "2.3", features = [] }
 tauri-plugin-dialog = "2.3"
 tauri-plugin-shell = "2.3"
+tauri-plugin-notification = "2.3"
 tokio = { version = "1.35", features = ["full"] }
 uuid = { version = "1.9", features = ["v4", "serde"] }
 chrono = { version = "0.4.31", features = ["serde"] }
 dirs = "5.0"
 thiserror = "1.0"
 log = "0.4"
+env_logger = "0.11"
 anyhow = "1.0"
 portable-pty = "0.8"
 

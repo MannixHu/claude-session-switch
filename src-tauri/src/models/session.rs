@@ -6,7 +6,7 @@ pub struct Session {
     pub id: String,
     pub project_id: String,
     pub name: String,
-    pub shell: String,           // "bash", "zsh", "fish"
+    pub shell: String, // "bash", "zsh", "fish"
     pub environment_variables: HashMap<String, String>,
     pub command_history: Vec<String>, // executed commands
     pub created_at: String,

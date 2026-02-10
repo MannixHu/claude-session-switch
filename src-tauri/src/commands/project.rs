@@ -1,7 +1,7 @@
-use tauri::State;
-use tauri_plugin_dialog::DialogExt;
 use crate::models::Project;
 use crate::AppState;
+use tauri::State;
+use tauri_plugin_dialog::DialogExt;
 
 #[tauri::command]
 pub async fn pick_project_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
@@ -38,10 +38,7 @@ pub fn get_project(id: String, state: State<'_, AppState>) -> Result<Project, St
 }
 
 #[tauri::command]
-pub fn update_project(
-    project: Project,
-    state: State<'_, AppState>,
-) -> Result<Project, String> {
+pub fn update_project(project: Project, state: State<'_, AppState>) -> Result<Project, String> {
     state.project_service.update_project(project)
 }
 

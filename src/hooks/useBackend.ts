@@ -116,6 +116,33 @@ export function useBackend() {
     setState((prev) => ({ ...prev, error }));
   }, []);
 
+  const normalizeError = useCallback((error: unknown): string => {
+    return error instanceof Error ? error.message : String(error);
+  }, []);
+
+  const runWithState = useCallback(
+    async <T>(operation: () => Promise<T>, trackLoading = true): Promise<T> => {
+      if (trackLoading) {
+        setLoading(true);
+      }
+
+      clearError();
+
+      try {
+        return await operation();
+      } catch (error) {
+        const errorMsg = normalizeError(error);
+        setError(errorMsg);
+        throw error;
+      } finally {
+        if (trackLoading) {
+          setLoading(false);
+        }
+      }
+    },
+    [clearError, normalizeError, setError, setLoading]
+  );
+
   // Project Commands
   const createProject = useCallback(
     async (input: CreateProjectInput): Promise<Project> => {
@@ -175,26 +202,20 @@ export function useBackend() {
 
   const updateProject = useCallback(
     async (input: UpdateProjectInput): Promise<Project> => {
-      setLoading(true);
-      clearError();
-      try {
-        const result = await invoke<Project>("update_project", {
-          id: input.id,
-          name: input.name,
-          description: input.description,
-          path: input.path,
-          color: input.color,
-        } as Record<string, unknown>);
-        return result;
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        setError(errorMsg);
-        throw error;
-      } finally {
-        setLoading(false);
-      }
+      return runWithState(async () => {
+        const existing = await invoke<Project>("get_project", { id: input.id });
+        const merged: Project = {
+          ...existing,
+          name: input.name ?? existing.name,
+          description: input.description ?? existing.description,
+          path: input.path ?? existing.path,
+          color: input.color ?? existing.color,
+        };
+
+        return invoke<Project>("update_project", { project: merged });
+      });
     },
-    [setLoading, clearError, setError]
+    [runWithState]
   );
 
   const deleteProject = useCallback(
@@ -313,26 +334,21 @@ export function useBackend() {
 
   const updateSession = useCallback(
     async (input: UpdateSessionInput): Promise<Session> => {
-      setLoading(true);
-      clearError();
-      try {
-        const result = await invoke<Session>("update_session", {
-          id: input.id,
-          name: input.name,
-          shell: input.shell,
-          working_directory: input.working_directory,
-          environment_variables: input.environment_variables,
-        } as Record<string, unknown>);
-        return result;
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        setError(errorMsg);
-        throw error;
-      } finally {
-        setLoading(false);
-      }
+      return runWithState(async () => {
+        const existing = await invoke<Session>("get_session", { id: input.id });
+
+        const merged: Session = {
+          ...existing,
+          name: input.name ?? existing.name,
+          shell: input.shell ? input.shell.toLowerCase() : existing.shell,
+          environment_variables:
+            input.environment_variables ?? existing.environment_variables,
+        };
+
+        return invoke<Session>("update_session", { session: merged });
+      });
     },
-    [setLoading, clearError, setError]
+    [runWithState]
   );
 
   const deleteSession = useCallback(
@@ -410,6 +426,21 @@ export function useBackend() {
     [setLoading, clearError, setError]
   );
 
+  const getAvailableEditors = useCallback(async (): Promise<Record<string, string>> => {
+    setLoading(true);
+    clearError();
+    try {
+      const result = await invoke<Record<string, string>>("get_available_editors");
+      return result || {};
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      setError(errorMsg);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, [setLoading, clearError, setError]);
+
   const openSessionInTerminal = useCallback(
     async (sessionId: string, terminal?: string): Promise<void> => {
       setLoading(true);
@@ -451,10 +482,57 @@ export function useBackend() {
     [setLoading, clearError, setError]
   );
 
+  const openProjectInTerminal = useCallback(
+    async (projectPath: string, terminalApp?: string): Promise<void> => {
+      return runWithState(
+        async () => {
+          await invoke<void>("open_project_in_terminal", {
+            project_path: projectPath,
+            terminal_app: terminalApp ?? null,
+          });
+        },
+        false
+      );
+    },
+    [runWithState]
+  );
+
+  const openProjectInEditor = useCallback(
+    async (projectPath: string, editorApp?: string): Promise<void> => {
+      return runWithState(
+        async () => {
+          await invoke<void>("open_project_in_editor", {
+            project_path: projectPath,
+            editor_app: editorApp ?? null,
+          });
+        },
+        false
+      );
+    },
+    [runWithState]
+  );
+
   // PTY Commands
   const createPty = useCallback(
-    async (sessionId: string, workingDir: string): Promise<boolean> => {
-      return invoke<boolean>("create_pty", { session_id: sessionId, working_dir: workingDir });
+    async (
+      sessionId: string,
+      workingDir: string,
+      options?: {
+        enableClaudeResume?: boolean;
+        resumeSessionId?: string;
+        claudeArgs?: string[];
+        allowDangerouslySkipPermissions?: boolean;
+      }
+    ): Promise<boolean> => {
+      return invoke<boolean>("create_pty", {
+        session_id: sessionId,
+        working_dir: workingDir,
+        enable_claude_resume: options?.enableClaudeResume ?? false,
+        resume_session_id: options?.resumeSessionId ?? null,
+        claude_args: options?.claudeArgs ?? null,
+        allow_dangerously_skip_permissions:
+          options?.allowDangerouslySkipPermissions ?? false,
+      });
     },
     []
   );
@@ -490,57 +568,52 @@ export function useBackend() {
   // Claude Code Native Session Commands
   const listClaudeSessions = useCallback(
     async (projectPath: string, limit?: number): Promise<ClaudeSession[]> => {
-      setLoading(true);
-      clearError();
-      try {
-        const result = await invoke<ClaudeSession[]>("list_claude_sessions", {
-          project_path: projectPath,
-          limit: limit ?? null,
-        });
-        return result || [];
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        setError(errorMsg);
-        throw error;
-      } finally {
-        setLoading(false);
-      }
+      const result = await invoke<ClaudeSession[]>("list_claude_sessions", {
+        project_path: projectPath,
+        limit: limit ?? null,
+      });
+      return result || [];
     },
-    [setLoading, clearError, setError]
+    []
   );
 
   const listClaudeProjects = useCallback(
     async (): Promise<[string, string][]> => {
-      setLoading(true);
-      clearError();
-      try {
-        const result = await invoke<[string, string][]>("list_claude_projects");
-        return result || [];
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        setError(errorMsg);
-        throw error;
-      } finally {
-        setLoading(false);
-      }
+      const result = await invoke<[string, string][]>("list_claude_projects");
+      return result || [];
     },
-    [setLoading, clearError, setError]
+    []
+  );
+
+  const renameClaudeSession = useCallback(
+    async (projectPath: string, sessionId: string, sessionName: string): Promise<void> => {
+      return runWithState(
+        async () => {
+          await invoke<void>("rename_claude_session", {
+            project_path: projectPath,
+            session_id: sessionId,
+            session_name: sessionName,
+          });
+        },
+        false
+      );
+    },
+    [runWithState]
   );
 
   const deleteClaudeSession = useCallback(
     async (projectPath: string, sessionId: string): Promise<void> => {
-      try {
-        await invoke<void>("delete_claude_session", {
-          project_path: projectPath,
-          session_id: sessionId,
-        });
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        setError(errorMsg);
-        throw error;
-      }
+      return runWithState(
+        async () => {
+          await invoke<void>("delete_claude_session", {
+            project_path: projectPath,
+            session_id: sessionId,
+          });
+        },
+        false
+      );
     },
-    [setError]
+    [runWithState]
   );
 
   return {
@@ -569,7 +642,10 @@ export function useBackend() {
 
     // Terminal commands
     getAvailableTerminals,
+    getAvailableEditors,
     openSessionInTerminal,
+    openProjectInTerminal,
+    openProjectInEditor,
     runSessionCommand,
 
     // PTY commands
@@ -582,6 +658,7 @@ export function useBackend() {
     // Claude Code native session commands
     listClaudeSessions,
     listClaudeProjects,
+    renameClaudeSession,
     deleteClaudeSession,
   };
 }

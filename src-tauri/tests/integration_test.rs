@@ -20,7 +20,10 @@ mod tests {
         // Scenario: User fills project form and submits
         assert!(!project_name.is_empty(), "Project name should not be empty");
         assert!(!project_path.is_empty(), "Project path should not be empty");
-        assert!(project_color.starts_with("#"), "Project color should be hex code");
+        assert!(
+            project_color.starts_with("#"),
+            "Project color should be hex code"
+        );
 
         println!("✓ Project creation fields validated");
     }
@@ -56,16 +59,17 @@ mod tests {
         // When: User clicks "Open in Terminal"
         // Then: Terminal app should launch with session configuration
 
-        let available_terminals = vec![
-            "Terminal.app",
-            "iTerm2.app",
-            "WezTerm",
-            "Alacritty"
-        ];
+        let available_terminals = vec!["Terminal.app", "iTerm2.app", "WezTerm", "Alacritty"];
 
         // Scenario: Verify terminal detection on macOS
-        assert!(!available_terminals.is_empty(), "Terminal apps should be detectable");
-        assert!(available_terminals.len() >= 1, "At least one terminal available on macOS");
+        assert!(
+            !available_terminals.is_empty(),
+            "Terminal apps should be detectable"
+        );
+        assert!(
+            available_terminals.len() >= 1,
+            "At least one terminal available on macOS"
+        );
 
         println!("✓ Terminal integration validated");
     }
@@ -80,7 +84,10 @@ mod tests {
         // Scenario: Verify persistence path structure
         // Expected path: ~/.local/share/CloudCodeSessionManager/ (or macOS equivalent)
         let persistence_dir = "CloudCodeSessionManager";
-        assert!(!persistence_dir.is_empty(), "Persistence directory configured");
+        assert!(
+            !persistence_dir.is_empty(),
+            "Persistence directory configured"
+        );
 
         println!("✓ Data persistence validated");
     }
@@ -102,8 +109,10 @@ mod tests {
         assert_eq!(sessions.len(), 3, "Multiple sessions available");
 
         for (id, name, shell) in sessions {
-            assert!(!id.is_empty() && !name.is_empty() && !shell.is_empty(),
-                   "Session metadata complete");
+            assert!(
+                !id.is_empty() && !name.is_empty() && !shell.is_empty(),
+                "Session metadata complete"
+            );
         }
 
         println!("✓ Session switching validated");
@@ -120,7 +129,10 @@ mod tests {
         let invalid_shell = "invalid_shell";
 
         // Scenario: Verify error detection
-        assert!(invalid_project_path.is_empty(), "Empty path should be detected");
+        assert!(
+            invalid_project_path.is_empty(),
+            "Empty path should be detected"
+        );
         assert_ne!(invalid_shell, "bash", "Invalid shell should be rejected");
 
         println!("✓ Error handling validated");
@@ -157,7 +169,7 @@ mod tests {
         // Then: Sessions should be filtered by project
 
         let projects = vec![
-            ("proj-1", "Claude Code", 2),   // 2 sessions
+            ("proj-1", "Claude Code", 2), // 2 sessions
             ("proj-2", "WebUI", 3),       // 3 sessions
             ("proj-3", "Mobile", 1),      // 1 session
         ];
@@ -182,7 +194,9 @@ mod tests {
 
         assert!(total_sessions <= 10000, "Scale within reasonable limits");
 
-        println!("✓ Can handle {} projects with {} sessions each",
-                num_projects, num_sessions_per_project);
+        println!(
+            "✓ Can handle {} projects with {} sessions each",
+            num_projects, num_sessions_per_project
+        );
     }
 }

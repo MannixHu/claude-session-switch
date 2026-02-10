@@ -193,7 +193,8 @@ end tell"#,
             )
         }
         TerminalApp::Kitty => {
-            let kitty_path = find_kitty_path().ok_or_else(|| "Kitty not found in PATH".to_string())?;
+            let kitty_path =
+                find_kitty_path().ok_or_else(|| "Kitty not found in PATH".to_string())?;
 
             Command::new(&kitty_path)
                 .arg("--directory")
@@ -212,7 +213,11 @@ end tell"#,
     }
 }
 
-fn open_script_with_app(app_name: &str, script_path: &str, error_prefix: &str) -> Result<(), String> {
+fn open_script_with_app(
+    app_name: &str,
+    script_path: &str,
+    error_prefix: &str,
+) -> Result<(), String> {
     Command::new("bash")
         .arg("-c")
         .arg(format!(
@@ -246,9 +251,13 @@ fn create_temp_script(path: &str, command: &str, file_prefix: &str) -> Result<St
 }
 
 fn command_exists(command: &str) -> bool {
-    Command::new("sh")
-        .arg("-c")
-        .arg(format!("command -v {} >/dev/null 2>&1", command))
+    let normalized = command.trim();
+    if normalized.is_empty() || normalized.contains(char::is_whitespace) {
+        return false;
+    }
+
+    Command::new("which")
+        .arg(normalized)
         .status()
         .map(|status| status.success())
         .unwrap_or(false)

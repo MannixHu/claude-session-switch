@@ -24,7 +24,7 @@ impl ShellType {
     }
 
     pub fn from_str(s: &str) -> Option<Self> {
-        match s {
+        match s.trim().to_lowercase().as_str() {
             "bash" => Some(ShellType::Bash),
             "zsh" => Some(ShellType::Zsh),
             "fish" => Some(ShellType::Fish),

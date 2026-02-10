@@ -15,6 +15,15 @@ pub fn list_claude_projects() -> Result<Vec<(String, String)>, String> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
+pub fn rename_claude_session(
+    project_path: String,
+    session_id: String,
+    session_name: String,
+) -> Result<(), String> {
+    ClaudeSessionService::rename_claude_session(&project_path, &session_id, &session_name)
+}
+
+#[tauri::command(rename_all = "snake_case")]
 pub fn delete_claude_session(project_path: String, session_id: String) -> Result<(), String> {
     ClaudeSessionService::delete_claude_session(&project_path, &session_id)
 }

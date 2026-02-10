@@ -1,6 +1,6 @@
-use tauri::State;
 use crate::models::{Session, ShellType};
 use crate::AppState;
+use tauri::State;
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn create_session(
@@ -9,8 +9,11 @@ pub fn create_session(
     shell: String,
     state: State<'_, AppState>,
 ) -> Result<Session, String> {
-    let shell_type = ShellType::from_str(&shell).unwrap_or(ShellType::Bash);
-    state.session_service.create_session(project_id, name, shell_type)
+    let shell_type = ShellType::from_str(&shell)
+        .ok_or_else(|| format!("Unsupported shell: {}", shell.trim()))?;
+    state
+        .session_service
+        .create_session(project_id, name, shell_type)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -32,10 +35,7 @@ pub fn get_session(id: String, state: State<'_, AppState>) -> Result<Session, St
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn update_session(
-    session: Session,
-    state: State<'_, AppState>,
-) -> Result<Session, String> {
+pub fn update_session(session: Session, state: State<'_, AppState>) -> Result<Session, String> {
     state.session_service.update_session(session)
 }
 
@@ -50,13 +50,12 @@ pub fn add_command_history(
     command: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    state.session_service.add_command_history(&session_id, command)
+    state
+        .session_service
+        .add_command_history(&session_id, command)
 }
 
 #[tauri::command(rename_all = "snake_case")]
-pub fn clear_command_history(
-    session_id: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+pub fn clear_command_history(session_id: String, state: State<'_, AppState>) -> Result<(), String> {
     state.session_service.clear_command_history(&session_id)
 }

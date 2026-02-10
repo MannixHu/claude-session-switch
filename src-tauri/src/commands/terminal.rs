@@ -6,7 +6,9 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::models::TerminalApp;
-use crate::utils::{detect_available_terminals, open_terminal_with_command, open_terminal_with_path};
+use crate::utils::{
+    detect_available_terminals, open_terminal_with_command, open_terminal_with_path,
+};
 use crate::AppState;
 
 #[derive(Serialize)]
@@ -46,12 +48,13 @@ pub fn open_session_in_terminal(
 ) -> Result<(), String> {
     let session = state.session_service.get_session(&session_id)?;
     let project = state.project_service.get_project(&session.project_id)?;
+    let project_path = normalize_existing_directory_path(&project.path)?;
 
     let terminal_app = terminal.unwrap_or_else(|| "Terminal".to_string());
     let resolved_terminal = TerminalApp::from_display_name(&terminal_app)
         .ok_or_else(|| format!("Unknown terminal: {}", terminal_app))?;
 
-    open_terminal_with_path(resolved_terminal, &project.path)
+    open_terminal_with_path(resolved_terminal, &project_path)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -60,10 +63,30 @@ pub fn open_session_with_command(
     terminal_app: String,
     command: String,
 ) -> Result<(), String> {
+    let normalized_path = normalize_existing_directory_path(&project_path)?;
+    let normalized_command = command.trim();
+    if normalized_command.is_empty() {
+        return Err("Command cannot be empty".to_string());
+    }
+
     let resolved_terminal = TerminalApp::from_display_name(&terminal_app)
         .ok_or_else(|| format!("Unknown terminal: {}", terminal_app))?;
 
-    open_terminal_with_command(resolved_terminal, &project_path, &command)
+    open_terminal_with_command(resolved_terminal, &normalized_path, normalized_command)
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn open_project_in_terminal(
+    project_path: String,
+    terminal_app: Option<String>,
+) -> Result<(), String> {
+    let normalized_path = normalize_existing_directory_path(&project_path)?;
+
+    let selected_terminal = terminal_app.unwrap_or_else(|| "Terminal".to_string());
+    let resolved_terminal = TerminalApp::from_display_name(selected_terminal.trim())
+        .ok_or_else(|| format!("Unknown terminal: {}", selected_terminal))?;
+
+    open_terminal_with_path(resolved_terminal, &normalized_path)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -79,19 +102,15 @@ pub fn run_session_command(
 
     let session = state.session_service.get_session(&session_id)?;
     let project = state.project_service.get_project(&session.project_id)?;
-    let shell_path = resolve_shell_path(&session.shell);
+    let shell_path = resolve_shell_path(&session.shell)?;
+    let project_path = normalize_existing_directory_path(&project.path)?;
 
     let output = Command::new(&shell_path)
         .arg("-lc")
         .arg(trimmed_command)
-        .current_dir(&project.path)
+        .current_dir(&project_path)
         .output()
-        .map_err(|error| {
-            format!(
-                "Failed to run command with shell {}: {}",
-                shell_path, error
-            )
-        })?;
+        .map_err(|error| format!("Failed to run command with shell {}: {}", shell_path, error))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -107,28 +126,67 @@ pub fn run_session_command(
     Ok(SessionCommandResult {
         command: trimmed_command.to_string(),
         shell: shell_path,
-        cwd: project.path,
+        cwd: project_path,
         exit_code,
         stdout,
         stderr,
     })
 }
 
-fn resolve_shell_path(shell: &str) -> String {
+fn resolve_shell_path(shell: &str) -> Result<String, String> {
     let normalized = shell.trim();
 
     if normalized.is_empty() {
-        return "/bin/zsh".to_string();
+        return Err("Shell cannot be empty".to_string());
     }
 
     if normalized.contains('/') {
-        return normalized.to_string();
+        if Path::new(normalized).exists() {
+            return Ok(normalized.to_string());
+        }
+
+        return Err(format!("Shell executable not found: {}", normalized));
     }
 
     let bundled_path = format!("/bin/{}", normalized);
     if Path::new(&bundled_path).exists() {
-        return bundled_path;
+        return Ok(bundled_path);
     }
 
-    normalized.to_string()
+    if command_exists(normalized) {
+        return Ok(normalized.to_string());
+    }
+
+    Err(format!("Unsupported or missing shell: {}", normalized))
+}
+
+fn normalize_existing_directory_path(path: &str) -> Result<String, String> {
+    let normalized = path.trim();
+    if normalized.is_empty() {
+        return Err("Project path cannot be empty".to_string());
+    }
+
+    let candidate = Path::new(normalized);
+    if !candidate.exists() {
+        return Err(format!("Project path does not exist: {}", normalized));
+    }
+
+    if !candidate.is_dir() {
+        return Err(format!("Project path is not a directory: {}", normalized));
+    }
+
+    Ok(normalized.to_string())
+}
+
+fn command_exists(command: &str) -> bool {
+    let normalized = command.trim();
+    if normalized.is_empty() || normalized.contains(char::is_whitespace) {
+        return false;
+    }
+
+    Command::new("which")
+        .arg(normalized)
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }

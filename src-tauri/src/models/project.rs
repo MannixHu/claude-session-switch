@@ -2,14 +2,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Project {
-    pub id: String,              // UUID
+    pub id: String, // UUID
     pub name: String,
     pub description: String,
     pub path: String,
-    pub color: String,           // hex color
+    pub color: String, // hex color
     pub is_favorited: bool,
     pub session_ids: Vec<String>, // session UUIDs
-    pub created_at: String,      // ISO8601
+    pub created_at: String,       // ISO8601
     pub updated_at: String,
 }
 
