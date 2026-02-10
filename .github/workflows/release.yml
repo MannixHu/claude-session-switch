@@ -45,7 +45,7 @@ jobs:
           if [ ! -f src-tauri/Cargo.lock ]; then
             echo "Cargo.lock missing in ${TAG_NAME}, restoring from main"
             git fetch --depth 1 origin main
-            git show origin/main:src-tauri/Cargo.lock > src-tauri/Cargo.lock
+            git show FETCH_HEAD:src-tauri/Cargo.lock > src-tauri/Cargo.lock
           fi
           test -f src-tauri/Cargo.lock
 
