@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -36,7 +36,7 @@ impl PtyLaunchConfig {
         }
     }
 
-    fn launch_script(&self, fallback_session_id: &str, working_dir: &str) -> Option<String> {
+    fn launch_script(&self, fallback_session_id: &str, _working_dir: &str) -> Option<String> {
         if self.mode == PtyLaunchMode::Plain {
             return None;
         }
@@ -47,7 +47,7 @@ impl PtyLaunchConfig {
             .filter(|value| !value.trim().is_empty())
             .unwrap_or(fallback_session_id);
 
-        let mut claude_command_parts = vec![String::from("claude")];
+        let mut claude_base_parts = vec![String::from("claude")];
 
         for arg in self
             .claude_args
@@ -55,22 +55,19 @@ impl PtyLaunchConfig {
             .map(|value| value.trim())
             .filter(|value| !value.is_empty())
         {
-            claude_command_parts.push(shell_quote(arg));
+            claude_base_parts.push(shell_quote(arg));
         }
 
-        claude_command_parts.push(String::from("-r"));
-        claude_command_parts.push(shell_quote(resume_id));
+        let claude_base_command = claude_base_parts.join(" ");
 
-        let claude_command = claude_command_parts.join(" ");
+        let mut claude_resume_parts = claude_base_parts;
+        claude_resume_parts.push(String::from("-r"));
+        claude_resume_parts.push(shell_quote(resume_id));
 
-        let tmux_session_name = tmux_session_name(resume_id);
-        let tmux_session_name_quoted = shell_quote(&tmux_session_name);
-        let working_dir_quoted = shell_quote(working_dir);
-        let claude_command_quoted = shell_quote(&claude_command);
+        let claude_resume_command = claude_resume_parts.join(" ");
+        let claude_command = format!("{} || {}", claude_resume_command, claude_base_command);
 
-        Some(format!(
-            r#"if command -v tmux >/dev/null 2>&1; then tmux kill-session -t {tmux_session_name_quoted} >/dev/null 2>&1; tmux new-session -d -s {tmux_session_name_quoted} -c {working_dir_quoted} {claude_command_quoted}; tmux set-option -q -t {tmux_session_name_quoted} status off >/dev/null 2>&1; exec tmux attach-session -t {tmux_session_name_quoted} || exec {claude_command}; else exec {claude_command}; fi"#
-        ))
+        Some(format!(r#"exec {claude_command}"#))
     }
 }
 
@@ -175,6 +172,10 @@ impl PtyManager {
         } else {
             cmd.env("COLORTERM", "truecolor");
         }
+
+        let inherited_path = std::env::var("PATH").unwrap_or_default();
+        let runtime_path = build_runtime_path(&inherited_path);
+        cmd.env("PATH", runtime_path.as_str());
 
         let child = pair
             .slave
@@ -293,6 +294,12 @@ struct PtyOutput {
     data: String,
 }
 
+#[derive(serde::Serialize, Clone)]
+struct PtyExit {
+    session_id: String,
+    status: String,
+}
+
 fn emit_pty_output(app_handle: &tauri::AppHandle, session_id: &str, data: &str) -> bool {
     use tauri::Emitter;
 
@@ -318,6 +325,18 @@ fn emit_pty_output(app_handle: &tauri::AppHandle, session_id: &str, data: &str) 
     true
 }
 
+fn emit_pty_exit(app_handle: &tauri::AppHandle, session_id: &str, status: &str) {
+    use tauri::Emitter;
+
+    let payload = PtyExit {
+        session_id: session_id.to_string(),
+        status: status.to_string(),
+    };
+
+    if let Err(error) = app_handle.emit("pty-exit", payload) {
+        log::debug!("Failed emitting pty-exit for {}: {}", session_id, error);
+    }
+}
 
 fn reader_thread(
     session_id: String,
@@ -362,18 +381,24 @@ fn reader_thread(
         }
     }
 
-    match child.wait() {
+    let exit_status = match child.wait() {
         Ok(status) => {
-            log::info!("PTY child exited sid={} status={:?}", session_id, status);
+            let status_text = format!("{:?}", status);
+            log::info!("PTY child exited sid={} status={}", session_id, status_text);
+            status_text
         }
         Err(error) => {
+            let status_text = format!("wait_error: {}", error);
             log::warn!(
                 "Failed waiting PTY child for session {}: {}",
                 session_id,
                 error
             );
+            status_text
         }
-    }
+    };
+
+    emit_pty_exit(&app_handle, &session_id, &exit_status);
 
     if let Ok(mut map) = sessions.lock() {
         let should_remove = map
@@ -442,6 +467,68 @@ fn validate_claude_resume_target(working_dir: &str, session_id: &str) -> Result<
     ))
 }
 
+fn build_runtime_path(existing_path: &str) -> String {
+    let mut ordered_paths: Vec<String> = Vec::new();
+    let mut seen = HashSet::new();
+
+    let mut push_path = |candidate: String| {
+        let trimmed = candidate.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+
+        let normalized = trimmed.to_string();
+        if seen.insert(normalized.clone()) {
+            ordered_paths.push(normalized);
+        }
+    };
+
+    for value in existing_path.split(':') {
+        push_path(value.to_string());
+    }
+
+    for value in [
+        "/opt/homebrew/bin",
+        "/opt/homebrew/sbin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+        "/Library/Apple/usr/bin",
+    ] {
+        push_path(value.to_string());
+    }
+
+    if let Some(home) = dirs::home_dir() {
+        for relative in [
+            ".local/bin",
+            ".npm-global/bin",
+            "Library/pnpm",
+            ".bun/bin",
+            ".volta/bin",
+            ".cargo/bin",
+        ] {
+            push_path(home.join(relative).to_string_lossy().to_string());
+        }
+    }
+
+    if let Ok(npm_prefix) = std::env::var("npm_config_prefix") {
+        push_path(
+            PathBuf::from(npm_prefix)
+                .join("bin")
+                .to_string_lossy()
+                .to_string(),
+        );
+    }
+
+    if let Ok(pnpm_home) = std::env::var("PNPM_HOME") {
+        push_path(pnpm_home);
+    }
+
+    ordered_paths.join(":")
+}
+
 fn validate_working_dir(working_dir: &str) -> Result<(), String> {
     if working_dir.is_empty() {
         return Err("Working directory cannot be empty".to_string());
@@ -470,25 +557,3 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-fn tmux_session_name(session_id: &str) -> String {
-    let sanitized: String = session_id
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect();
-
-    let trimmed = sanitized.trim_matches('_');
-    let fallback = if trimmed.is_empty() {
-        "session"
-    } else {
-        trimmed
-    };
-    let limited: String = fallback.chars().take(48).collect();
-
-    format!("ccsm_{}", limited)
-}

@@ -1,6 +1,12 @@
-use tauri::State;
+use tauri::{Emitter, State};
 
 use crate::services::pty_service::{PtyLaunchConfig, PtyManager};
+
+#[derive(serde::Serialize, Clone)]
+struct PtyCreateFailedPayload {
+    session_id: String,
+    error: String,
+}
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn create_pty(
@@ -30,12 +36,27 @@ pub fn create_pty(
         PtyLaunchConfig::plain()
     };
 
-    state
-        .create(&session_id, &working_dir, launch_config, app_handle)
-        .map_err(|error| {
+    match state.create(&session_id, &working_dir, launch_config, app_handle.clone()) {
+        Ok(created) => Ok(created),
+        Err(error) => {
             log::warn!("create_pty failed for {}: {}", session_id, error);
-            error
-        })
+
+            let payload = PtyCreateFailedPayload {
+                session_id: session_id.clone(),
+                error: error.clone(),
+            };
+
+            if let Err(emit_error) = app_handle.emit("pty-create-failed", payload) {
+                log::debug!(
+                    "failed emitting pty-create-failed for {}: {}",
+                    session_id,
+                    emit_error
+                );
+            }
+
+            Err(error)
+        }
+    }
 }
 
 #[tauri::command(rename_all = "snake_case")]

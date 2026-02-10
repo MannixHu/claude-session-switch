@@ -1,17 +1,22 @@
 {
   "name": "claude-session-switch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
-  "description": "Switch for Claude sessions with embedded terminal and resume workflow",
+  "description": "Desktop Claude Code session switcher with embedded terminal, project grouping, and resume support",
   "type": "module",
   "license": "MIT",
   "keywords": [
     "claude",
-    "session-switch",
+    "claude-code",
+    "claude-cli",
+    "session-switcher",
+    "session-manager",
     "tauri",
     "xterm",
     "terminal",
-    "ai-workflow"
+    "tmux",
+    "ai-workflow",
+    "macos"
   ],
   "scripts": {
     "dev": "tauri dev",
@@ -38,5 +43,6 @@
     "@vitejs/plugin-react": "^4",
     "typescript": "^5",
     "vite": "^5"
-  }
+  },
+  "packageManager": "pnpm@10.29.2"
 }

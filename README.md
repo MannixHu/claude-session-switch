@@ -1,7 +1,7 @@
 # Claude Session Switch
 
-> 面向 Claude Code / Claude CLI 的轻量桌面会话管理器。  
-> 用 **Tauri + Rust + React + xterm.js** 提供“GUI 管理 + CLI 执行”的混合工作流。
+> Claude Code / Claude CLI 的轻量桌面会话切换器（Session Switcher）。  
+> 基于 **Tauri + Rust + React + xterm.js**，支持项目分组、会话恢复与内嵌终端。
 
 [English](./README.en.md) | 中文（当前）
 
@@ -51,12 +51,12 @@
 
 ## 界面截图（展开 / 收起 + 浅色 / 深色）
 
-> 截图文件建议放在 `docs/screenshots/` 目录，按下面文件名命名。
+> 以下截图来自当前代码版本（本地实际运行截图）。
 
 | 浅色主题 | 深色主题 |
 | --- | --- |
-| 展开侧栏  ![Expanded Light](./docs/screenshots/expanded-light.png) | 展开侧栏  ![Expanded Dark](./docs/screenshots/expanded-dark.png) |
-| 收起侧栏  ![Collapsed Light](./docs/screenshots/collapsed-light.png) | 收起侧栏  ![Collapsed Dark](./docs/screenshots/collapsed-dark.png) |
+| 展开侧栏  ![Expanded Light](./docs/screenshots/expanded-light-zh.png) | 展开侧栏  ![Expanded Dark](./docs/screenshots/expanded-dark.png) |
+| 收起侧栏  ![Collapsed Light](./docs/screenshots/collapsed-light-zh.png) | 收起侧栏  ![Collapsed Dark](./docs/screenshots/collapsed-dark.png) |
 
 ---
 
@@ -79,6 +79,13 @@
 - 基于 `xterm.js` + `portable-pty`
 - 支持终端输出流、窗口 resize、链接点击外部打开
 - 持续优化滚动和交互流畅度
+
+> 当前版本说明：
+>
+> - 已临时停用“Claude 执行完成系统通知”机制
+> - 已临时停用“基于 PTY 输出推断运行中 loading”机制
+>
+> 原因是先保证状态判断准确性与稳定性，后续会在机制更可靠时重新引入。
 
 ### 4) 配置驱动（AI 友好）
 
@@ -150,18 +157,21 @@ macOS 默认数据目录：
 - 推荐安装 `claude` CLI
 - 可选安装 `tmux`（增强恢复体验）
 
-### 开发运行
+### 开发运行（推荐 pnpm）
 
 ```bash
-npm install
-npm run dev
+corepack enable pnpm
+pnpm install
+pnpm run dev
 ```
 
 ### 构建
 
 ```bash
-npm run build
+pnpm run build
 ```
+
+> 兼容说明：保留 npm 脚本，若你习惯 npm，仍可使用 `npm run dev` / `npm run build`。
 
 ---
 
@@ -170,6 +180,7 @@ npm run build
 ### CI（`.github/workflows/build.yml`）
 
 - 分支 `main/develop` 与 PR 自动执行：
+  - `pnpm install --frozen-lockfile`
   - 前端构建
   - Rust `cargo check`
 

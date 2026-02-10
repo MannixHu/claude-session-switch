@@ -33,6 +33,7 @@ const PTY_RESIZE_FLUSH_DELAY_MS = 48;
 const PTY_RENDER_FLUSH_CHUNK_SIZE_VISIBLE = 64 * 1024;
 const PTY_RENDER_FLUSH_CHUNK_SIZE_HIDDEN = 160 * 1024;
 const PTY_RENDER_HIDDEN_FLUSH_DELAY_MS = 42;
+const PTY_RENDER_FLUSH_WHILE_SELECTION_DELAY_MS = 120;
 
 const DEFAULT_TERMINAL_THEMES = {
   dark: {
@@ -124,6 +125,48 @@ const openExternalUrl = async (url: string) => {
   }
 };
 
+const copyTextToClipboard = async (value: string): Promise<boolean> => {
+  const text = value;
+  if (!text) {
+    return false;
+  }
+
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fallback below
+  }
+
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  textarea.style.pointerEvents = "none";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+
+  textarea.remove();
+  return copied;
+};
+
 export default function EmbeddedTerminal({
   sessionId,
   workingDir,
@@ -157,7 +200,7 @@ export default function EmbeddedTerminal({
   }, [visible]);
 
   const fitTerminal = () => {
-    if (!fitAddonRef.current || !terminalRef.current || !containerRef.current) {
+    if (!fitAddonRef.current || !containerRef.current) {
       return;
     }
 
@@ -168,9 +211,8 @@ export default function EmbeddedTerminal({
     requestAnimationFrame(() => {
       try {
         fitAddonRef.current?.fit();
-        terminalRef.current?.focus();
       } catch {
-        // ignore transient fit/focus errors
+        // ignore transient fit errors
       }
     });
   };
@@ -322,8 +364,15 @@ export default function EmbeddedTerminal({
       let lastScrollableStateCheckAt = 0;
 
       const updateScrollableState = () => {
+        const hadScrollableContent = containerEl.classList.contains("has-scrollbar");
         const hasScrollableContent = viewport.scrollHeight > viewport.clientHeight + 1;
         containerEl.classList.toggle("has-scrollbar", hasScrollableContent);
+
+        if (hadScrollableContent !== hasScrollableContent && visibleRef.current) {
+          requestAnimationFrame(() => {
+            fitTerminal();
+          });
+        }
 
         if (!hasScrollableContent) {
           containerEl.classList.remove("is-scrolling");
@@ -422,6 +471,14 @@ export default function EmbeddedTerminal({
       clearPtyRenderSchedule();
 
       if (!ptyRenderBufferRef.current) {
+        return;
+      }
+
+      if (visibleRef.current && terminal.hasSelection()) {
+        ptyRenderTimerRef.current = setTimeout(() => {
+          ptyRenderTimerRef.current = null;
+          flushPtyRenderBuffer();
+        }, PTY_RENDER_FLUSH_WHILE_SELECTION_DELAY_MS);
         return;
       }
 
@@ -544,6 +601,27 @@ export default function EmbeddedTerminal({
       queuePtyWrite(data);
     });
 
+    const keyDisposable = terminal.onKey(({ domEvent }) => {
+      const key = domEvent.key.toLowerCase();
+      const isMacCopy = domEvent.metaKey && !domEvent.ctrlKey && !domEvent.altKey && key === "c";
+      const isCtrlShiftCopy =
+        domEvent.ctrlKey && domEvent.shiftKey && !domEvent.metaKey && !domEvent.altKey && key === "c";
+
+      if (!terminal.hasSelection() || (!isMacCopy && !isCtrlShiftCopy)) {
+        return;
+      }
+
+      domEvent.preventDefault();
+      domEvent.stopPropagation();
+
+      const selectedText = terminal.getSelection();
+      if (!selectedText) {
+        return;
+      }
+
+      void copyTextToClipboard(selectedText);
+    });
+
     const resizeDisposable = terminal.onResize(({ cols, rows }) => {
       queueResize(cols, rows);
     });
@@ -606,6 +684,7 @@ export default function EmbeddedTerminal({
       }
 
       dataDisposable.dispose();
+      keyDisposable.dispose();
       resizeDisposable.dispose();
 
       if (unlistenRef.current) {
@@ -740,6 +819,13 @@ export default function EmbeddedTerminal({
 
     ensureFitWithRetry();
 
+    const focusTimer = window.setTimeout(() => {
+      if (!visibleRef.current || !terminalRef.current || terminalRef.current.hasSelection()) {
+        return;
+      }
+      terminalRef.current.focus();
+    }, 20);
+
     return () => {
       ensurePtyCancelled = true;
       if (ensurePtyTimer) {
@@ -748,6 +834,7 @@ export default function EmbeddedTerminal({
       if (retryTimer) {
         clearTimeout(retryTimer);
       }
+      window.clearTimeout(focusTimer);
       window.removeEventListener("resize", handleResize);
     };
   }, [ensurePtySession, visible, sessionId]);

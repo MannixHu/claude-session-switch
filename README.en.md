@@ -1,7 +1,7 @@
 # Claude Session Switch
 
-> A lightweight desktop session switch for Claude Code / Claude CLI.  
-> Built with **Tauri + Rust + React + xterm.js** for a hybrid workflow: GUI orchestration + native CLI execution.
+> A lightweight desktop Claude Code session switcher for Claude Code / Claude CLI.  
+> Built with **Tauri + Rust + React + xterm.js**, with project grouping, session resume, and embedded terminal workflows.
 
 English (current) | [中文](./README.md)
 
@@ -53,7 +53,7 @@ In short: **keep CLI performance, upgrade session management UX.**
 
 ## Screenshots (Expanded/Collapsed + Light/Dark)
 
-> Put screenshot files under `docs/screenshots/` using the filenames below.
+> The screenshots below are captured from the current code version (real local app runtime).
 
 | Light Theme | Dark Theme |
 | --- | --- |
@@ -81,6 +81,13 @@ In short: **keep CLI performance, upgrade session management UX.**
 - Powered by `xterm.js` + `portable-pty`
 - Supports output streaming, resize, and external link opening
 - Ongoing tuning for smoother scrolling and interaction
+
+> Current version note:
+>
+> - "Claude completion system notifications" are temporarily disabled
+> - "PTY-output-based running/loading indicator" is temporarily disabled
+>
+> This is intentional to prioritize correctness and stability first; these capabilities may return once the detection model is more reliable.
 
 ### 4) Config-driven (AI-friendly)
 
@@ -152,18 +159,21 @@ After editing, click `Reload Config` in the app menu to hot-reload without resta
 - Recommended: `claude` CLI installed
 - Optional: `tmux` for stronger resume behavior
 
-### Run locally
+### Run locally (pnpm recommended)
 
 ```bash
-npm install
-npm run dev
+corepack enable pnpm
+pnpm install
+pnpm run dev
 ```
 
 ### Build
 
 ```bash
-npm run build
+pnpm run build
 ```
+
+> Compatibility note: npm scripts are still kept, so `npm run dev` / `npm run build` continue to work.
 
 ---
 
@@ -173,6 +183,7 @@ npm run build
 
 On `main/develop` pushes and pull requests:
 
+- `pnpm install --frozen-lockfile`
 - frontend build
 - Rust `cargo check`
 

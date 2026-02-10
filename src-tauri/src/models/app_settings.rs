@@ -7,7 +7,7 @@ fn default_version() -> u32 {
 }
 
 fn default_theme_preference() -> String {
-    "system".to_string()
+    "light".to_string()
 }
 
 fn default_language() -> String {

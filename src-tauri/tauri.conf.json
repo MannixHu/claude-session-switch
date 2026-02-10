@@ -1,6 +1,6 @@
 {
   "productName": "Claude Session Switch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.cloudcode.sessionswitch",
   "build": {
     "beforeDevCommand": "npm run dev:ui",
@@ -18,7 +18,7 @@
         "fullscreen": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "theme": "Dark"
+        "theme": "Light"
       }
     ],
     "security": {

@@ -2,15 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { LogicalSize, getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
-} from "@tauri-apps/plugin-notification";
 import { Project, ClaudeSession, useBackend } from "../hooks/useBackend";
 import { LayoutState, useWindowManager } from "../hooks/useWindowManager";
 import EmbeddedTerminal from "../components/EmbeddedTerminal";
-import { subscribePtyOutput } from "../lib/ptyEventBus";
 import {
   AppLanguage,
   DEFAULT_APP_LANGUAGE,
@@ -116,15 +110,21 @@ type AppSettingsFile = {
   };
 };
 
+type PtyExitPayload = {
+  session_id: string;
+  status?: string;
+};
+
+type PtyCreateFailedPayload = {
+  session_id: string;
+  error?: string;
+};
+
 const DEFAULT_CLAUDE_CUSTOM_ARGS = "--dangerously-skip-permissions";
 const DEFAULT_EXTERNAL_TERMINAL = "Terminal";
 const DEFAULT_EXTERNAL_EDITOR = "VSCode";
 const DEFAULT_VISIBLE_SESSIONS = 3;
 const SETTINGS_PERSIST_DEBOUNCE_MS = 480;
-const CLAUDE_RUNNING_IDLE_TIMEOUT_MS = 1400;
-const CLAUDE_RUNNING_SWEEP_INTERVAL_MS = 420;
-const CLAUDE_COMPLETION_NOTIFY_COOLDOWN_MS = 8000;
-
 const tryGetCurrentWindow = () => {
   try {
     return getCurrentWindow();
@@ -527,7 +527,6 @@ export function ProjectDashboard() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [openTerminalSessionIds, setOpenTerminalSessionIds] = useState<Set<string>>(new Set());
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
-  const [runningClaudeSessionIds, setRunningClaudeSessionIds] = useState<Set<string>>(new Set());
   const [statusMessage, setStatusMessage] = useState("");
   const [sessionAliases, setSessionAliases] = useState<Record<string, string>>({});
   const [restoreLastOpenedSession, setRestoreLastOpenedSession] = useState(true);
@@ -549,9 +548,9 @@ export function ProjectDashboard() {
   const [sessionNameDraft, setSessionNameDraft] = useState("");
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
   const [dragOverProjectId, setDragOverProjectId] = useState<string | null>(null);
-  const [themePreference, setThemePreference] = useState<ThemePreference>("system");
+  const [themePreference, setThemePreference] = useState<ThemePreference>("light");
   const [appLanguage, setAppLanguage] = useState<AppLanguage>(DEFAULT_APP_LANGUAGE);
-  const [themeMode, setThemeMode] = useState<ThemeMode>("dark");
+  const [themeMode, setThemeMode] = useState<ThemeMode>("light");
   const [isThemeTransitioning, setIsThemeTransitioning] = useState(false);
   const [themePalettes, setThemePalettes] = useState<ThemePalettes>(DEFAULT_THEME_PALETTES);
   const [isStartupSettingsOpen, setIsStartupSettingsOpen] = useState(false);
@@ -566,11 +565,6 @@ export function ProjectDashboard() {
   const lastPersistedSettingsRef = useRef<string>("");
   const themeTransitionTimerRef = useRef<number | null>(null);
   const hasThemeModeMountedRef = useRef(false);
-  const runningSessionLastActivityRef = useRef<Map<string, number>>(new Map());
-  const runningSessionSweepTimerRef = useRef<number | null>(null);
-  const completionNotificationAtRef = useRef<Map<string, number>>(new Map());
-  const notificationPermissionRef = useRef<boolean | null>(null);
-  const activeTerminalIdRef = useRef<string | null>(null);
   const sidebarResizeRafRef = useRef<number | null>(null);
   const pendingSidebarWidthRef = useRef<number | null>(null);
   const windowResizeRafRef = useRef<number | null>(null);
@@ -584,234 +578,6 @@ export function ProjectDashboard() {
     [sessionAliases]
   );
 
-  useEffect(() => {
-    activeTerminalIdRef.current = activeTerminalId;
-  }, [activeTerminalId]);
-
-  const ensureNotificationPermission = useCallback(async (): Promise<boolean> => {
-    if (notificationPermissionRef.current !== null) {
-      return notificationPermissionRef.current;
-    }
-
-    try {
-      let granted = await isPermissionGranted();
-      if (!granted) {
-        const permission = await requestPermission();
-        granted = permission === "granted";
-      }
-
-      notificationPermissionRef.current = granted;
-      return granted;
-    } catch (error) {
-      console.warn("Failed to resolve notification permission", error);
-      notificationPermissionRef.current = false;
-      return false;
-    }
-  }, []);
-
-  const notifyClaudeSessionCompleted = useCallback(
-    async (sessionId: string) => {
-      if (!sessionId || sessionId.startsWith("__plain__")) {
-        return;
-      }
-
-      const lastNotifiedAt = completionNotificationAtRef.current.get(sessionId) ?? 0;
-      const now = Date.now();
-      if (now - lastNotifiedAt < CLAUDE_COMPLETION_NOTIFY_COOLDOWN_MS) {
-        return;
-      }
-
-      const currentWindow = tryGetCurrentWindow();
-      const windowFocused = currentWindow
-        ? await currentWindow.isFocused().catch(() => true)
-        : true;
-      const isForegroundSession = activeTerminalIdRef.current === sessionId;
-
-      if (windowFocused && isForegroundSession) {
-        return;
-      }
-
-      const granted = await ensureNotificationPermission();
-      if (!granted) {
-        return;
-      }
-
-      completionNotificationAtRef.current.set(sessionId, now);
-      const shortSessionId = sessionId.slice(0, 8);
-      sendNotification({
-        title: "Claude Code",
-        body: "Session " + shortSessionId + " finished (idle).",
-      });
-    },
-    [ensureNotificationPermission]
-  );
-
-  const markClaudeSessionRunning = useCallback(
-    (sessionId: string) => {
-      if (!sessionId || sessionId.startsWith("__plain__")) {
-        return;
-      }
-
-      runningSessionLastActivityRef.current.set(sessionId, Date.now());
-
-      setRunningClaudeSessionIds((previous) => {
-        if (previous.has(sessionId)) {
-          return previous;
-        }
-
-        const next = new Set(previous);
-        next.add(sessionId);
-        return next;
-      });
-    },
-    []
-  );
-
-  useEffect(() => {
-    const trackedOpenSessionIds = new Set(
-      Array.from(openTerminalSessionIds).filter((sessionId) => !sessionId.startsWith("__plain__"))
-    );
-
-    setRunningClaudeSessionIds((previous) => {
-      let changed = false;
-      const next = new Set<string>();
-
-      for (const sessionId of previous) {
-        if (trackedOpenSessionIds.has(sessionId)) {
-          next.add(sessionId);
-          continue;
-        }
-
-        changed = true;
-        runningSessionLastActivityRef.current.delete(sessionId);
-      }
-
-      return changed ? next : previous;
-    });
-
-    for (const sessionId of runningSessionLastActivityRef.current.keys()) {
-      if (!trackedOpenSessionIds.has(sessionId)) {
-        runningSessionLastActivityRef.current.delete(sessionId);
-        completionNotificationAtRef.current.delete(sessionId);
-      }
-    }
-
-    for (const sessionId of completionNotificationAtRef.current.keys()) {
-      if (!trackedOpenSessionIds.has(sessionId)) {
-        completionNotificationAtRef.current.delete(sessionId);
-      }
-    }
-  }, [openTerminalSessionIds]);
-
-  useEffect(() => {
-    const stopSweepTimer = () => {
-      if (runningSessionSweepTimerRef.current !== null) {
-        window.clearInterval(runningSessionSweepTimerRef.current);
-        runningSessionSweepTimerRef.current = null;
-      }
-    };
-
-    if (runningClaudeSessionIds.size === 0) {
-      stopSweepTimer();
-      return;
-    }
-
-    if (runningSessionSweepTimerRef.current !== null) {
-      return;
-    }
-
-    runningSessionSweepTimerRef.current = window.setInterval(() => {
-      const now = Date.now();
-      const completedSessionIds: string[] = [];
-
-      for (const sessionId of runningSessionLastActivityRef.current.keys()) {
-        const lastActivityAt = runningSessionLastActivityRef.current.get(sessionId) ?? 0;
-        if (now - lastActivityAt < CLAUDE_RUNNING_IDLE_TIMEOUT_MS) {
-          continue;
-        }
-
-        runningSessionLastActivityRef.current.delete(sessionId);
-        completedSessionIds.push(sessionId);
-      }
-
-      if (completedSessionIds.length === 0) {
-        return;
-      }
-
-      setRunningClaudeSessionIds((previous) => {
-        let changed = false;
-        const next = new Set(previous);
-        for (const sessionId of completedSessionIds) {
-          if (next.delete(sessionId)) {
-            changed = true;
-          }
-        }
-        return changed ? next : previous;
-      });
-
-      for (const sessionId of completedSessionIds) {
-        void notifyClaudeSessionCompleted(sessionId);
-      }
-
-      if (runningSessionLastActivityRef.current.size === 0) {
-        stopSweepTimer();
-      }
-    }, CLAUDE_RUNNING_SWEEP_INTERVAL_MS);
-
-    return stopSweepTimer;
-  }, [notifyClaudeSessionCompleted, runningClaudeSessionIds.size]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const unsubs: Array<() => void> = [];
-
-    const subscribeOpenSessions = async () => {
-      const targetSessionIds = Array.from(openTerminalSessionIds).filter(
-        (sessionId) => !sessionId.startsWith("__plain__")
-      );
-
-      for (const sessionId of targetSessionIds) {
-        try {
-          const unlisten = await subscribePtyOutput(sessionId, (data) => {
-            if (!data || data.length === 0) {
-              return;
-            }
-
-            markClaudeSessionRunning(sessionId);
-          });
-
-          if (cancelled) {
-            unlisten();
-            continue;
-          }
-
-          unsubs.push(unlisten);
-        } catch (error) {
-          console.warn("Failed to subscribe running-state PTY output", error);
-        }
-      }
-    };
-
-    void subscribeOpenSessions();
-
-    return () => {
-      cancelled = true;
-      for (const unlisten of unsubs) {
-        unlisten();
-      }
-    };
-  }, [markClaudeSessionRunning, openTerminalSessionIds]);
-
-  useEffect(() => {
-    return () => {
-      if (runningSessionSweepTimerRef.current !== null) {
-        window.clearInterval(runningSessionSweepTimerRef.current);
-        runningSessionSweepTimerRef.current = null;
-      }
-      runningSessionLastActivityRef.current.clear();
-      completionNotificationAtRef.current.clear();
-    };
-  }, []);
 
   useEffect(() => {
     if (!statusMessage) {
@@ -877,6 +643,70 @@ export function ProjectDashboard() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    let unlistenPtyExit: (() => void) | null = null;
+    let unlistenPtyCreateFailed: (() => void) | null = null;
+
+    const cleanupTerminalSessionState = (sessionId: string) => {
+      const normalizedSessionId = sessionId.trim();
+      if (!normalizedSessionId) {
+        return;
+      }
+
+      setOpenTerminalSessionIds((previous) => {
+        if (!previous.has(normalizedSessionId)) {
+          return previous;
+        }
+
+        const next = new Set(previous);
+        next.delete(normalizedSessionId);
+        return next;
+      });
+
+      setActiveTerminalId((previous) =>
+        previous === normalizedSessionId ? null : previous
+      );
+    };
+
+    const setupPtyLifecycleListeners = async () => {
+      try {
+        unlistenPtyExit = await listen<PtyExitPayload>("pty-exit", (event) => {
+          cleanupTerminalSessionState(event.payload?.session_id ?? "");
+        });
+
+        unlistenPtyCreateFailed = await listen<PtyCreateFailedPayload>(
+          "pty-create-failed",
+          (event) => {
+            const sessionId = event.payload?.session_id ?? "";
+            cleanupTerminalSessionState(sessionId);
+
+            const message =
+              typeof event.payload?.error === "string"
+                ? event.payload.error.trim()
+                : "";
+            if (message) {
+              setStatusMessage(t("status_terminal_start_failed", { message }));
+            }
+          }
+        );
+      } catch (error) {
+        console.warn("Failed to register PTY lifecycle listeners", error);
+      }
+    };
+
+    void setupPtyLifecycleListeners();
+
+    return () => {
+      if (unlistenPtyExit) {
+        unlistenPtyExit();
+      }
+
+      if (unlistenPtyCreateFailed) {
+        unlistenPtyCreateFailed();
+      }
+    };
+  }, [t]);
 
   // Keyboard shortcuts: ⌘B toggle sidebar, ⌘, open settings
   useEffect(() => {
@@ -1083,6 +913,11 @@ export function ProjectDashboard() {
       }
 
       const matched = sessionLookupMap.get(terminalId);
+      const sessionProjectPath = matched?.session.project_path?.trim();
+      if (sessionProjectPath) {
+        return sessionProjectPath;
+      }
+
       return matched?.project.path || selectedProject?.path || "";
     },
     [projectById, selectedProject?.path, sessionLookupMap]
@@ -1175,7 +1010,7 @@ export function ProjectDashboard() {
       if (value === "light" || value === "dark" || value === "system") {
         return value;
       }
-      return "system";
+      return "light";
     };
 
     const loadSettingsFromFile = async () => {
@@ -2741,8 +2576,6 @@ export function ProjectDashboard() {
 
                           {visibleSessions.map((session) => {
                             const isSessionOpen = openTerminalSessionIds.has(session.session_id);
-                            const isSessionRunning = runningClaudeSessionIds.has(session.session_id);
-
                             return (
                             <div
                               key={session.session_id}
@@ -2757,16 +2590,8 @@ export function ProjectDashboard() {
                               }}
                               title={formatSessionLabel(session)}
                             >
-                              <span className={`session-dot ${isSessionOpen ? "open" : ""} ${
-                                isSessionRunning ? "running" : ""
-                              }`}>
-                                {isSessionRunning ? (
-                                  <span className="session-dot-spinner" aria-hidden="true" />
-                                ) : isSessionOpen ? (
-                                  "●"
-                                ) : (
-                                  "•"
-                                )}
+                              <span className={`session-dot ${isSessionOpen ? "open" : ""}`}>
+                                {isSessionOpen ? "●" : "•"}
                               </span>
                               {editingSessionId === session.session_id ? (
                                 <input

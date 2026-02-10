@@ -18,17 +18,11 @@
 .embedded-terminal .xterm {
   width: 100%;
   height: 100%;
+  position: relative;
   padding: 0;
   border: none;
   outline: none;
   background: inherit;
-}
-
-.embedded-terminal .xterm,
-.embedded-terminal .xterm * {
-  letter-spacing: normal !important;
-  word-spacing: normal !important;
-  text-transform: none !important;
 }
 
 .embedded-terminal .xterm-helpers {
@@ -52,16 +46,13 @@
 }
 
 .embedded-terminal .xterm-viewport {
-  width: 100% !important;
-  height: 100% !important;
   background: inherit;
-  overflow-y: auto !important;
+  overflow-y: scroll !important;
   overflow-x: hidden !important;
-  scrollbar-gutter: auto;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
   overscroll-behavior: contain;
-  will-change: scroll-position;
 }
 
 .embedded-terminal.is-scrolling .xterm-viewport {

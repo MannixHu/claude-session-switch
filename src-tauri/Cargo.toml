@@ -1,10 +1,10 @@
 [package]
 name = "claude-session-switch"
-version = "0.1.0"
-description = "Claude Session Switch built with Tauri and Rust"
+version = "0.1.1"
+description = "Desktop Claude Code session switcher with embedded terminal and resume support"
 authors = ["Claude Code Team"]
 license = "MIT"
-repository = ""
+repository = "https://github.com/MannixHu/claude-session-switch"
 default-run = "claude-session-switch"
 edition = "2021"
 rust-version = "1.70"
