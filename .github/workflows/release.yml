@@ -34,10 +34,20 @@ jobs:
             arch: x64
 
     steps:
-      - name: Checkout
+      - name: Checkout tag source
         uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG_NAME }}
+          fetch-depth: 0
+
+      - name: Ensure Cargo.lock for legacy tags
+        run: |
+          if [ ! -f src-tauri/Cargo.lock ]; then
+            echo "Cargo.lock missing in ${TAG_NAME}, restoring from main"
+            git fetch --depth 1 origin main
+            git show origin/main:src-tauri/Cargo.lock > src-tauri/Cargo.lock
+          fi
+          test -f src-tauri/Cargo.lock
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -62,14 +72,27 @@ jobs:
           workspaces: './src-tauri -> target'
 
       - name: Build Tauri app
-        run: pnpm run build -- --target ${{ matrix.target }}
+        run: pnpm exec tauri build --target ${{ matrix.target }}
 
       - name: Collect release assets
         run: |
           mkdir -p release-assets
-          find "src-tauri/target/${{ matrix.target }}/release/bundle" -type f \
+
+          if [ -d "src-tauri/target/${{ matrix.target }}/release/bundle" ]; then
+            BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
+          elif [ -d "src-tauri/target/release/bundle" ]; then
+            BUNDLE_DIR="src-tauri/target/release/bundle"
+          else
+            echo "Bundle directory not found"
+            find src-tauri/target -maxdepth 5 -type d -name bundle || true
+            exit 1
+          fi
+
+          echo "Using bundle directory: ${BUNDLE_DIR}"
+          find "${BUNDLE_DIR}" -type f \
             \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.zip" \) \
             -exec cp {} release-assets/ \;
+
           ls -lah release-assets
 
       - name: Upload artifacts
