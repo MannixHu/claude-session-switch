@@ -74,6 +74,29 @@ jobs:
       - name: Build Tauri app
         run: pnpm exec tauri build --target ${{ matrix.target }}
 
+      - name: Re-sign app bundle (ad-hoc)
+        run: |
+          if [ -d "src-tauri/target/${{ matrix.target }}/release/bundle" ]; then
+            BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
+          elif [ -d "src-tauri/target/release/bundle" ]; then
+            BUNDLE_DIR="src-tauri/target/release/bundle"
+          else
+            echo "Bundle directory not found"
+            find src-tauri/target -maxdepth 5 -type d -name bundle || true
+            exit 1
+          fi
+
+          APP_PATH="$(find "${BUNDLE_DIR}" -maxdepth 4 -type d -name "*.app" | head -n 1)"
+          if [ -z "${APP_PATH}" ]; then
+            echo "No .app bundle found under ${BUNDLE_DIR}"
+            find "${BUNDLE_DIR}" -maxdepth 4 -print
+            exit 1
+          fi
+
+          echo "Re-signing app bundle: ${APP_PATH}"
+          codesign --force --deep --sign - "${APP_PATH}"
+          codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
+
       - name: Collect release assets
         run: |
           mkdir -p release-assets
@@ -89,8 +112,29 @@ jobs:
           fi
 
           echo "Using bundle directory: ${BUNDLE_DIR}"
+
+          APP_PATH="$(find "${BUNDLE_DIR}" -maxdepth 4 -type d -name "*.app" | head -n 1)"
+          if [ -z "${APP_PATH}" ]; then
+            echo "No .app bundle found under ${BUNDLE_DIR}"
+            find "${BUNDLE_DIR}" -maxdepth 4 -print
+            exit 1
+          fi
+
+          APP_NAME="$(basename "${APP_PATH}" .app)"
+          VERSION="${TAG_NAME#v}"
+          if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
+            ARCH_SUFFIX="aarch64"
+          else
+            ARCH_SUFFIX="x64"
+          fi
+          DMG_NAME="${APP_NAME}_${VERSION}_${ARCH_SUFFIX}.dmg"
+          DMG_PATH="release-assets/${DMG_NAME}"
+
+          echo "Creating DMG from signed app: ${DMG_PATH}"
+          hdiutil create -volname "${APP_NAME}" -srcfolder "${APP_PATH}" -ov -format UDZO "${DMG_PATH}"
+
           find "${BUNDLE_DIR}" -type f \
-            \( -name "*.dmg" -o -name "*.app.tar.gz" -o -name "*.zip" \) \
+            \( -name "*.app.tar.gz" -o -name "*.zip" \) \
             -exec cp {} release-assets/ \;
 
           ls -lah release-assets
