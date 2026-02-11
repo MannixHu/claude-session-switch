@@ -80,6 +80,7 @@ In short: **keep CLI performance, upgrade session management UX.**
 
 - Powered by `xterm.js` + `portable-pty`
 - Supports output streaming, resize, and external link opening
+- Two-column layout polish: tighter left sidebar gutter, extra left padding in terminal for better readability
 - Ongoing tuning for smoother scrolling and interaction
 
 > Current version note:
@@ -195,6 +196,8 @@ On `v*` tags:
   - `arm64`
   - `x64` (Intel)
 - auto-generate release notes and `SHA256SUMS`
+- release notes are generated from commits/PRs between the previous release and current tag (`generate_release_notes: true`)
+- `pnpm` version is sourced only from `package.json` `packageManager` to avoid Action/project mismatch
 
 ---
 

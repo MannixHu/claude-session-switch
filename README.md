@@ -78,6 +78,7 @@
 
 - 基于 `xterm.js` + `portable-pty`
 - 支持终端输出流、窗口 resize、链接点击外部打开
+- 两栏布局微调：左侧列表左边距更紧凑，右侧终端增加左留白，阅读更舒适
 - 持续优化滚动和交互流畅度
 
 > 当前版本说明：
@@ -191,6 +192,8 @@ pnpm run build
   - macOS `arm64`
   - macOS `x64`（Intel）
 - 自动生成 GitHub Release Notes 与 `SHA256SUMS`
+- Release Notes 基于上一个版本到当前 tag 的提交/PR 自动汇总（`generate_release_notes: true`）
+- `pnpm` 版本以 `package.json` 的 `packageManager` 为单一来源，避免 Action 配置与项目配置冲突
 
 ---
 

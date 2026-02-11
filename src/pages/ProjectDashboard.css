@@ -517,7 +517,7 @@
 
 .project-tree {
   overflow: auto;
-  padding: 34px 6px 2px;
+  padding: 34px 6px 2px 3px;
   flex: 1;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--text-sub) 24%, transparent) transparent;
@@ -574,7 +574,7 @@
 }
 
 .tree-project-row {
-  padding: 3px 5px 3px 2px;
+  padding: 3px 5px 3px 1px;
   gap: 2px;
   cursor: grab;
   user-select: none;
