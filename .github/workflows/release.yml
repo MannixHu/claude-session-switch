@@ -71,7 +71,8 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
-      - name: Validate Apple signing and notarization secrets
+      - name: Detect Apple signing and notarization mode
+        id: signing
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -96,13 +97,17 @@ jobs:
             fi
           done
 
-          if [ "${#MISSING_VARS[@]}" -gt 0 ]; then
-            echo "::error::Missing required Apple secrets: ${MISSING_VARS[*]}"
-            echo "::error::Unsigned or unnotarized macOS apps are commonly blocked as damaged by Gatekeeper."
-            exit 1
+          if [ "${#MISSING_VARS[@]}" -eq 0 ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Apple signing/notarization: enabled"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Missing Apple secrets: ${MISSING_VARS[*]}"
+            echo "::warning::Fallback to unsigned build (release will work without notarization)."
           fi
 
-      - name: Build Tauri app
+      - name: Build Tauri app (signed/notarized)
+        if: steps.signing.outputs.enabled == 'true'
         run: pnpm exec tauri build --target ${{ matrix.target }}
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -111,6 +116,10 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Build Tauri app (unsigned fallback)
+        if: steps.signing.outputs.enabled != 'true'
+        run: pnpm exec tauri build --target ${{ matrix.target }}
 
       - name: Collect release assets
         run: |
@@ -160,6 +169,14 @@ jobs:
           find "${BUNDLE_DIR}" -type f \
             \( -name "*.app.tar.gz" -o -name "*.zip" \) \
             -exec cp {} release-assets/ \;
+
+          if [ "${{ steps.signing.outputs.enabled }}" != "true" ]; then
+            cat > release-assets/UNSIGNED_BUILD_NOTICE.txt << 'EOF'
+            This macOS build is unsigned and not notarized.
+            If Gatekeeper blocks launch, run:
+            xattr -dr com.apple.quarantine "/Applications/Claude Session Switch.app"
+            EOF
+          fi
 
           ls -lah release-assets
 
