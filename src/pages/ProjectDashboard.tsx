@@ -130,7 +130,7 @@ const DEFAULT_EXTERNAL_EDITOR = "VSCode";
 const DEFAULT_VISIBLE_SESSIONS = 3;
 const SETTINGS_PERSIST_DEBOUNCE_MS = 480;
 const DEFAULT_TERMINAL_FONT_FAMILY =
-  '"SF Mono", "SFMono-Regular", "Monaco", "Menlo", "Consolas", "Courier New", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK JP", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Segoe UI", "Ubuntu Mono", monospace';
+  '"JetBrains Mono", "SF Pro Text", "SF Mono", "SFMono-Regular", "Consolas", "Menlo", "Monaco", "Courier New", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK JP", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "WenQuanYi Micro Hei", "Noto Color Emoji", "Segoe UI", "Ubuntu Mono", monospace';
 const TERMINAL_SCROLLBAR_WIDTH_OPTIONS = [4, 5, 6, 8] as const;
 const DEFAULT_TERMINAL_SCROLLBAR_WIDTH = 6;
 const tryGetCurrentWindow = () => {

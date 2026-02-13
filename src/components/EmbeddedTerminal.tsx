@@ -46,7 +46,7 @@ const DEFAULT_TERMINAL_THEMES = {
     scrollbar: "rgba(88, 110, 117, 0.48)",
     scrollbarHover: "rgba(88, 110, 117, 0.66)",
     fontFamily:
-      '"JetBrains Mono", "SF Mono", "SFMono-Regular", ui-monospace, "Cascadia Mono", "Cascadia Code", Menlo, Monaco, Consolas, "Courier New", "Liberation Mono", "Noto Sans Mono CJK SC", "PingFang SC", "Microsoft YaHei", monospace',
+      '"JetBrains Mono", "SF Pro Text", "SF Mono", "SFMono-Regular", "Consolas", "Menlo", "Monaco", "Courier New", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK JP", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "WenQuanYi Micro Hei", "Noto Color Emoji", ui-monospace, monospace',
     scrollbarWidth: 6,
   },
   light: {
@@ -57,7 +57,7 @@ const DEFAULT_TERMINAL_THEMES = {
     scrollbar: "rgba(88, 96, 105, 0.34)",
     scrollbarHover: "rgba(88, 96, 105, 0.52)",
     fontFamily:
-      '"JetBrains Mono", "SF Mono", "SFMono-Regular", ui-monospace, "Cascadia Mono", "Cascadia Code", Menlo, Monaco, Consolas, "Courier New", "Liberation Mono", "Noto Sans Mono CJK SC", "PingFang SC", "Microsoft YaHei", monospace',
+      '"JetBrains Mono", "SF Pro Text", "SF Mono", "SFMono-Regular", "Consolas", "Menlo", "Monaco", "Courier New", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK JP", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "WenQuanYi Micro Hei", "Noto Color Emoji", ui-monospace, monospace',
     scrollbarWidth: 6,
   },
 } satisfies Record<"dark" | "light", EmbeddedTerminalThemePalette>;
@@ -249,6 +249,9 @@ export default function EmbeddedTerminal({
         selectionBackground: theme.selectionBackground,
       };
       terminalRef.current.options.fontFamily = theme.fontFamily;
+      terminalRef.current.options.overviewRuler = {
+        width: theme.scrollbarWidth,
+      };
     }
   };
 
@@ -331,6 +334,9 @@ export default function EmbeddedTerminal({
         selectionBackground: initialTheme.selectionBackground,
       },
       fontFamily: initialTheme.fontFamily,
+      overviewRuler: {
+        width: initialTheme.scrollbarWidth,
+      },
       fontSize: 14,
       lineHeight: 1.18,
       letterSpacing: 0,
