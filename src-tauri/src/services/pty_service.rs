@@ -140,6 +140,11 @@ impl PtyManager {
 
         let launch_script =
             launch_config.launch_script(normalized_session_id, normalized_working_dir);
+        let shell = std::env::var("SHELL")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "/bin/zsh".to_string());
 
         if let Some(script) = launch_script.as_ref() {
             log::debug!(
@@ -149,7 +154,7 @@ impl PtyManager {
             );
         }
 
-        let mut cmd = CommandBuilder::new("/bin/zsh");
+        let mut cmd = CommandBuilder::new(&shell);
         if let Some(script) = launch_script {
             cmd.arg("-ilc");
             cmd.arg(script);
