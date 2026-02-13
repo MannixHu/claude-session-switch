@@ -384,19 +384,29 @@ export default function EmbeddedTerminal({
 
     if (viewport) {
       let lastScrollableStateCheckAt = 0;
+      const hasScrollableContent = () => {
+        const activeBuffer = terminal.buffer.active;
+        if (activeBuffer.baseY > 0) {
+          return true;
+        }
+        if (activeBuffer.length > terminal.rows) {
+          return true;
+        }
+        return viewport.scrollHeight > viewport.clientHeight + 1;
+      };
 
       const updateScrollableState = () => {
         const hadScrollableContent = containerEl.classList.contains("has-scrollbar");
-        const hasScrollableContent = viewport.scrollHeight > viewport.clientHeight + 1;
-        containerEl.classList.toggle("has-scrollbar", hasScrollableContent);
+        const nextHasScrollableContent = hasScrollableContent();
+        containerEl.classList.toggle("has-scrollbar", nextHasScrollableContent);
 
-        if (hadScrollableContent !== hasScrollableContent && visibleRef.current) {
+        if (hadScrollableContent !== nextHasScrollableContent && visibleRef.current) {
           requestAnimationFrame(() => {
             fitTerminal();
           });
         }
 
-        if (!hasScrollableContent) {
+        if (!nextHasScrollableContent) {
           containerEl.classList.remove("is-scrolling");
           if (scrollbarHideTimerRef.current) {
             clearTimeout(scrollbarHideTimerRef.current);
@@ -426,20 +436,8 @@ export default function EmbeddedTerminal({
       };
 
       const showScrollbar = () => {
-        const hasScrollableContent = viewport.scrollHeight > viewport.clientHeight + 1;
-        containerEl.classList.toggle("has-scrollbar", hasScrollableContent);
-
-        if (!hasScrollableContent) {
-          if (scrollbarHideTimerRef.current) {
-            clearTimeout(scrollbarHideTimerRef.current);
-            scrollbarHideTimerRef.current = null;
-          }
-
-          containerEl.classList.remove("is-scrolling");
-          scheduleScrollableStateUpdate?.(true);
-          return;
-        }
-
+        const nextHasScrollableContent = hasScrollableContent();
+        containerEl.classList.toggle("has-scrollbar", nextHasScrollableContent);
         scheduleScrollableStateUpdate?.();
 
         containerEl.classList.add("is-scrolling");
@@ -471,6 +469,10 @@ export default function EmbeddedTerminal({
         viewport.removeEventListener("touchmove", handleUserScroll);
         containerEl.classList.remove("has-scrollbar", "is-scrolling");
       };
+
+      scrollDisposable = terminal.onScroll(() => {
+        showScrollbar();
+      });
     }
 
     requestAnimationFrame(() => {
