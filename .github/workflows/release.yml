@@ -71,31 +71,46 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
+      - name: Validate Apple signing and notarization secrets
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          REQUIRED_VARS=(
+            APPLE_CERTIFICATE
+            APPLE_CERTIFICATE_PASSWORD
+            APPLE_SIGNING_IDENTITY
+            APPLE_ID
+            APPLE_PASSWORD
+            APPLE_TEAM_ID
+          )
+
+          MISSING_VARS=()
+          for VAR_NAME in "${REQUIRED_VARS[@]}"; do
+            if [ -z "${!VAR_NAME}" ]; then
+              MISSING_VARS+=("${VAR_NAME}")
+            fi
+          done
+
+          if [ "${#MISSING_VARS[@]}" -gt 0 ]; then
+            echo "::error::Missing required Apple secrets: ${MISSING_VARS[*]}"
+            echo "::error::Unsigned or unnotarized macOS apps are commonly blocked as damaged by Gatekeeper."
+            exit 1
+          fi
+
       - name: Build Tauri app
         run: pnpm exec tauri build --target ${{ matrix.target }}
-
-      - name: Re-sign app bundle (ad-hoc)
-        run: |
-          if [ -d "src-tauri/target/${{ matrix.target }}/release/bundle" ]; then
-            BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
-          elif [ -d "src-tauri/target/release/bundle" ]; then
-            BUNDLE_DIR="src-tauri/target/release/bundle"
-          else
-            echo "Bundle directory not found"
-            find src-tauri/target -maxdepth 5 -type d -name bundle || true
-            exit 1
-          fi
-
-          APP_PATH="$(find "${BUNDLE_DIR}" -maxdepth 4 -type d -name "*.app" | head -n 1)"
-          if [ -z "${APP_PATH}" ]; then
-            echo "No .app bundle found under ${BUNDLE_DIR}"
-            find "${BUNDLE_DIR}" -maxdepth 4 -print
-            exit 1
-          fi
-
-          echo "Re-signing app bundle: ${APP_PATH}"
-          codesign --force --deep --sign - "${APP_PATH}"
-          codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Collect release assets
         run: |
