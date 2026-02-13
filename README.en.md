@@ -1,6 +1,6 @@
 # Claude Session Switch
 
-> A lightweight desktop Claude Code session switcher for Claude Code / Claude CLI.  
+> A lightweight macOS desktop app for Claude Code / Claude CLI session switching.  
 > Built with **Tauri + Rust + React + xterm.js**, with project grouping, session resume, and embedded terminal workflows.
 
 English (current) | [中文](./README.md)

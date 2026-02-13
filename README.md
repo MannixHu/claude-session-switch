@@ -1,6 +1,6 @@
 # Claude Session Switch
 
-> Claude Code / Claude CLI 的轻量桌面会话切换器（Session Switcher）。  
+> Claude Code / Claude CLI 的 macOS 轻量桌面会话切换器（Session Switcher）。  
 > 基于 **Tauri + Rust + React + xterm.js**，支持项目分组、会话恢复与内嵌终端。
 
 [English](./README.en.md) | 中文（当前）
