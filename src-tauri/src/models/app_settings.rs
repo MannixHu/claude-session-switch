@@ -42,6 +42,15 @@ fn default_restore_last_opened_session() -> bool {
     true
 }
 
+fn default_terminal_font_family() -> String {
+    r#""SF Mono", "SFMono-Regular", "Monaco", "Menlo", "Consolas", "Courier New", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK JP", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Segoe UI", "Ubuntu Mono", monospace"#
+        .to_string()
+}
+
+fn default_terminal_scrollbar_width() -> u32 {
+    6
+}
+
 fn default_external_terminal() -> String {
     "Terminal".to_string()
 }
@@ -137,6 +146,10 @@ pub struct ThemePalette {
     pub terminal_selection: String,
     pub terminal_scrollbar: String,
     pub terminal_scrollbar_hover: String,
+    #[serde(default = "default_terminal_font_family")]
+    pub terminal_font_family: String,
+    #[serde(default = "default_terminal_scrollbar_width")]
+    pub terminal_scrollbar_width: u32,
 }
 
 impl ThemePalette {
@@ -165,6 +178,8 @@ impl ThemePalette {
             terminal_selection: "#073642".to_string(),
             terminal_scrollbar: "rgba(88, 110, 117, 0.48)".to_string(),
             terminal_scrollbar_hover: "rgba(88, 110, 117, 0.66)".to_string(),
+            terminal_font_family: default_terminal_font_family(),
+            terminal_scrollbar_width: default_terminal_scrollbar_width(),
         }
     }
 
@@ -193,6 +208,8 @@ impl ThemePalette {
             terminal_selection: "#e9eaed".to_string(),
             terminal_scrollbar: "rgba(88, 96, 105, 0.34)".to_string(),
             terminal_scrollbar_hover: "rgba(88, 96, 105, 0.52)".to_string(),
+            terminal_font_family: default_terminal_font_family(),
+            terminal_scrollbar_width: default_terminal_scrollbar_width(),
         }
     }
 }

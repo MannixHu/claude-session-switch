@@ -15,6 +15,8 @@ interface EmbeddedTerminalThemePalette {
   selectionBackground: string;
   scrollbar: string;
   scrollbarHover: string;
+  fontFamily: string;
+  scrollbarWidth: number;
 }
 
 interface EmbeddedTerminalProps {
@@ -26,7 +28,7 @@ interface EmbeddedTerminalProps {
   claudeArgs?: string[];
 }
 
-const SCROLLBAR_HIDE_DELAY_MS = 620;
+const SCROLLBAR_HIDE_DELAY_MS = 280;
 const SCROLLABLE_STATE_THROTTLE_MS = 140;
 const PTY_WRITE_FLUSH_DELAY_MS = 12;
 const PTY_RESIZE_FLUSH_DELAY_MS = 48;
@@ -43,6 +45,9 @@ const DEFAULT_TERMINAL_THEMES = {
     selectionBackground: "#073642",
     scrollbar: "rgba(88, 110, 117, 0.48)",
     scrollbarHover: "rgba(88, 110, 117, 0.66)",
+    fontFamily:
+      '"JetBrains Mono", "SF Mono", "SFMono-Regular", ui-monospace, "Cascadia Mono", "Cascadia Code", Menlo, Monaco, Consolas, "Courier New", "Liberation Mono", "Noto Sans Mono CJK SC", "PingFang SC", "Microsoft YaHei", monospace',
+    scrollbarWidth: 6,
   },
   light: {
     background: "#fafafb",
@@ -51,6 +56,9 @@ const DEFAULT_TERMINAL_THEMES = {
     selectionBackground: "#e9eaed",
     scrollbar: "rgba(88, 96, 105, 0.34)",
     scrollbarHover: "rgba(88, 96, 105, 0.52)",
+    fontFamily:
+      '"JetBrains Mono", "SF Mono", "SFMono-Regular", ui-monospace, "Cascadia Mono", "Cascadia Code", Menlo, Monaco, Consolas, "Courier New", "Liberation Mono", "Noto Sans Mono CJK SC", "PingFang SC", "Microsoft YaHei", monospace',
+    scrollbarWidth: 6,
   },
 } satisfies Record<"dark" | "light", EmbeddedTerminalThemePalette>;
 
@@ -76,6 +84,10 @@ const normalizeThemePalette = (
     selectionBackground: valueOrFallback(themePalette.selectionBackground, fallback.selectionBackground),
     scrollbar: valueOrFallback(themePalette.scrollbar, fallback.scrollbar),
     scrollbarHover: valueOrFallback(themePalette.scrollbarHover, fallback.scrollbarHover),
+    fontFamily: valueOrFallback(themePalette.fontFamily, fallback.fontFamily),
+    scrollbarWidth: [4, 5, 6, 8].includes(themePalette.scrollbarWidth)
+      ? themePalette.scrollbarWidth
+      : fallback.scrollbarWidth,
   };
 };
 
@@ -223,6 +235,10 @@ export default function EmbeddedTerminal({
     if (containerRef.current) {
       containerRef.current.style.setProperty("--terminal-scrollbar-color", theme.scrollbar);
       containerRef.current.style.setProperty("--terminal-scrollbar-hover-color", theme.scrollbarHover);
+      containerRef.current.style.setProperty(
+        "--terminal-scrollbar-target-width",
+        `${theme.scrollbarWidth}px`
+      );
     }
 
     if (terminalRef.current) {
@@ -232,6 +248,7 @@ export default function EmbeddedTerminal({
         cursor: theme.cursor,
         selectionBackground: theme.selectionBackground,
       };
+      terminalRef.current.options.fontFamily = theme.fontFamily;
     }
   };
 
@@ -313,8 +330,7 @@ export default function EmbeddedTerminal({
         cursor: initialTheme.cursor,
         selectionBackground: initialTheme.selectionBackground,
       },
-      fontFamily:
-        '"SF Mono", "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+      fontFamily: initialTheme.fontFamily,
       fontSize: 14,
       lineHeight: 1.18,
       letterSpacing: 0,
@@ -432,10 +448,6 @@ export default function EmbeddedTerminal({
       viewport.addEventListener("wheel", handleUserScroll, options);
       viewport.addEventListener("scroll", handleUserScroll, options);
       viewport.addEventListener("touchmove", handleUserScroll, options);
-
-      scrollDisposable = terminal.onScroll(() => {
-        showScrollbar();
-      });
 
       scheduleScrollableStateUpdate(true);
 

@@ -55,6 +55,15 @@ impl SettingsService {
         }
     }
 
+    fn normalize_scrollbar_width(value: u32, fallback: u32) -> u32 {
+        let normalized = if value == 0 { fallback } else { value };
+
+        match normalized {
+            4 | 5 | 6 | 8 => normalized,
+            _ => fallback,
+        }
+    }
+
     fn normalize_palette(palette: &mut ThemePalette, defaults: &ThemePalette) {
         palette.app_bg = Self::normalize_non_empty(&palette.app_bg, &defaults.app_bg);
         palette.panel_bg = Self::normalize_non_empty(&palette.panel_bg, &defaults.panel_bg);
@@ -94,6 +103,12 @@ impl SettingsService {
             &palette.terminal_scrollbar_hover,
             &defaults.terminal_scrollbar_hover,
         );
+        palette.terminal_font_family =
+            Self::normalize_non_empty(&palette.terminal_font_family, &defaults.terminal_font_family);
+        palette.terminal_scrollbar_width = Self::normalize_scrollbar_width(
+            palette.terminal_scrollbar_width,
+            defaults.terminal_scrollbar_width,
+        );
     }
 
     fn palette_matches(palette: &ThemePalette, other: &ThemePalette) -> bool {
@@ -120,6 +135,8 @@ impl SettingsService {
             && palette.terminal_selection == other.terminal_selection
             && palette.terminal_scrollbar == other.terminal_scrollbar
             && palette.terminal_scrollbar_hover == other.terminal_scrollbar_hover
+            && palette.terminal_font_family == other.terminal_font_family
+            && palette.terminal_scrollbar_width == other.terminal_scrollbar_width
     }
 
     fn legacy_light_defaults_v3() -> ThemePalette {
@@ -147,6 +164,8 @@ impl SettingsService {
             terminal_selection: "#f0ede4".to_string(),
             terminal_scrollbar: "rgba(70, 86, 98, 0.42)".to_string(),
             terminal_scrollbar_hover: "rgba(70, 86, 98, 0.58)".to_string(),
+            terminal_font_family: String::new(),
+            terminal_scrollbar_width: 0,
         }
     }
 
@@ -175,6 +194,8 @@ impl SettingsService {
             terminal_selection: "#334155".to_string(),
             terminal_scrollbar: "rgba(100, 116, 139, 0.48)".to_string(),
             terminal_scrollbar_hover: "rgba(100, 116, 139, 0.66)".to_string(),
+            terminal_font_family: String::new(),
+            terminal_scrollbar_width: 0,
         }
     }
 
@@ -203,6 +224,8 @@ impl SettingsService {
             terminal_selection: "#f2efe7".to_string(),
             terminal_scrollbar: "rgba(70, 86, 98, 0.36)".to_string(),
             terminal_scrollbar_hover: "rgba(70, 86, 98, 0.52)".to_string(),
+            terminal_font_family: String::new(),
+            terminal_scrollbar_width: 0,
         }
     }
 
@@ -232,6 +255,8 @@ impl SettingsService {
             terminal_selection: "#eaedc8".to_string(),
             terminal_scrollbar: "rgba(92, 106, 114, 0.40)".to_string(),
             terminal_scrollbar_hover: "rgba(92, 106, 114, 0.56)".to_string(),
+            terminal_font_family: String::new(),
+            terminal_scrollbar_width: 0,
         }
     }
 
@@ -260,6 +285,8 @@ impl SettingsService {
             terminal_selection: "#e9eaed".to_string(),
             terminal_scrollbar: "rgba(88, 96, 105, 0.34)".to_string(),
             terminal_scrollbar_hover: "rgba(88, 96, 105, 0.52)".to_string(),
+            terminal_font_family: String::new(),
+            terminal_scrollbar_width: 0,
         }
     }
 

@@ -5,7 +5,7 @@
   display: none;
   min-width: 0;
   min-height: 0;
-  background: transparent;
+  background: var(--terminal-background, transparent);
 }
 
 .embedded-terminal.visible {
@@ -14,7 +14,7 @@
   height: 100%;
   padding-left: 8px;
   box-sizing: border-box;
-  background: transparent;
+  background: var(--terminal-background, transparent);
 }
 
 .embedded-terminal .xterm {
@@ -24,7 +24,7 @@
   padding: 0;
   border: none;
   outline: none;
-  background: inherit;
+  background: var(--terminal-background, inherit);
 }
 
 .embedded-terminal .xterm-helpers {
@@ -33,10 +33,11 @@
 
 .embedded-terminal .xterm-screen canvas {
   image-rendering: auto;
+  background: var(--terminal-background, transparent);
 }
 
 .embedded-terminal .xterm-screen {
-  background: inherit;
+  background: var(--terminal-background, inherit);
 }
 
 .embedded-terminal,
@@ -49,25 +50,45 @@
 
 .embedded-terminal .xterm-viewport {
   background: inherit;
-  overflow-y: scroll !important;
+  overflow-y: auto !important;
   overflow-x: hidden !important;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
   scrollbar-color: transparent transparent;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none;
   overscroll-behavior: contain;
+  --terminal-scrollbar-width: 0px;
+  --terminal-scrollbar-bg: transparent;
+}
+
+.embedded-terminal:not(.is-scrolling) .xterm-viewport,
+.embedded-terminal:not(.is-scrolling) .xterm-viewport::-webkit-scrollbar {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none;
+}
+
+.embedded-terminal:not(.is-scrolling) .xterm-viewport::-webkit-scrollbar {
+  width: 0px !important;
+  height: 0px !important;
+  background: transparent !important;
+  display: none;
 }
 
 .embedded-terminal.is-scrolling .xterm-viewport {
+  scrollbar-width: thin;
   scrollbar-color: var(--terminal-scrollbar-color, rgba(100, 116, 139, 0.48)) transparent;
+  --terminal-scrollbar-width: var(--terminal-scrollbar-target-width, 6px);
+  --terminal-scrollbar-bg: transparent;
 }
 
 .embedded-terminal .xterm-viewport::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 0px !important;
+  height: 0px !important;
+  display: none;
+  transition: width 140ms ease;
 }
 
 .embedded-terminal .xterm-viewport::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--terminal-scrollbar-bg);
 }
 
 .embedded-terminal .xterm-viewport::-webkit-scrollbar-thumb {
@@ -78,6 +99,12 @@
 
 .embedded-terminal.is-scrolling .xterm-viewport::-webkit-scrollbar-thumb {
   background: var(--terminal-scrollbar-color, rgba(100, 116, 139, 0.48));
+}
+
+.embedded-terminal.is-scrolling .xterm-viewport::-webkit-scrollbar {
+  width: var(--terminal-scrollbar-width) !important;
+  height: var(--terminal-scrollbar-width) !important;
+  display: block;
 }
 
 .embedded-terminal.is-scrolling

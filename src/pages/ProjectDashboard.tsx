@@ -51,6 +51,8 @@ type ThemePalette = {
   terminal_selection: string;
   terminal_scrollbar: string;
   terminal_scrollbar_hover: string;
+  terminal_font_family: string;
+  terminal_scrollbar_width: number;
 };
 
 type ThemePalettes = {
@@ -65,6 +67,8 @@ type TerminalThemePalette = {
   selectionBackground: string;
   scrollbar: string;
   scrollbarHover: string;
+  fontFamily: string;
+  scrollbarWidth: number;
 };
 
 type WindowSettings = {
@@ -125,6 +129,10 @@ const DEFAULT_EXTERNAL_TERMINAL = "Terminal";
 const DEFAULT_EXTERNAL_EDITOR = "VSCode";
 const DEFAULT_VISIBLE_SESSIONS = 3;
 const SETTINGS_PERSIST_DEBOUNCE_MS = 480;
+const DEFAULT_TERMINAL_FONT_FAMILY =
+  '"SF Mono", "SFMono-Regular", "Monaco", "Menlo", "Consolas", "Courier New", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK JP", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Segoe UI", "Ubuntu Mono", monospace';
+const TERMINAL_SCROLLBAR_WIDTH_OPTIONS = [4, 5, 6, 8] as const;
+const DEFAULT_TERMINAL_SCROLLBAR_WIDTH = 6;
 const tryGetCurrentWindow = () => {
   try {
     return getCurrentWindow();
@@ -176,6 +184,8 @@ const DEFAULT_THEME_PALETTES: ThemePalettes = {
     terminal_selection: "#073642",
     terminal_scrollbar: "rgba(88, 110, 117, 0.48)",
     terminal_scrollbar_hover: "rgba(88, 110, 117, 0.66)",
+    terminal_font_family: DEFAULT_TERMINAL_FONT_FAMILY,
+    terminal_scrollbar_width: DEFAULT_TERMINAL_SCROLLBAR_WIDTH,
   },
   light: {
     app_bg: "#f7f7f8",
@@ -201,6 +211,8 @@ const DEFAULT_THEME_PALETTES: ThemePalettes = {
     terminal_selection: "#e9eaed",
     terminal_scrollbar: "rgba(88, 96, 105, 0.34)",
     terminal_scrollbar_hover: "rgba(88, 96, 105, 0.52)",
+    terminal_font_family: DEFAULT_TERMINAL_FONT_FAMILY,
+    terminal_scrollbar_width: DEFAULT_TERMINAL_SCROLLBAR_WIDTH,
   },
 };
 
@@ -228,6 +240,7 @@ const THEME_PALETTE_KEYS: (keyof ThemePalette)[] = [
   "terminal_selection",
   "terminal_scrollbar",
   "terminal_scrollbar_hover",
+  "terminal_font_family",
 ];
 
 const normalizeCustomClaudeArgs = (raw: string): string[] => {
@@ -412,7 +425,42 @@ const normalizeThemePalette = (value: unknown, fallback: ThemePalette): ThemePal
     }
   }
 
-  return next;
+  const fontFamily = normalizeNonEmptyString(
+    source.terminal_font_family,
+    fallback.terminal_font_family
+  );
+  const scrollbarWidth = normalizeTerminalScrollbarWidth(
+    source.terminal_scrollbar_width,
+    fallback.terminal_scrollbar_width
+  );
+
+  return {
+    ...next,
+    terminal_font_family: fontFamily,
+    terminal_scrollbar_width: scrollbarWidth,
+  };
+};
+
+const normalizeTerminalScrollbarWidth = (
+  value: unknown,
+  fallback: number
+): number => {
+  const terminalWidth =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+      ? Number(value.trim())
+      : fallback;
+
+  if (!Number.isFinite(terminalWidth) || !Number.isInteger(terminalWidth)) {
+    return fallback;
+  }
+
+  return TERMINAL_SCROLLBAR_WIDTH_OPTIONS.includes(
+    terminalWidth as (typeof TERMINAL_SCROLLBAR_WIDTH_OPTIONS)[number]
+  )
+    ? terminalWidth
+    : fallback;
 };
 
 const normalizeThemePalettes = (value: unknown): ThemePalettes => {
@@ -2147,6 +2195,8 @@ export function ProjectDashboard() {
       selectionBackground: activeThemePalette.terminal_selection,
       scrollbar: activeThemePalette.terminal_scrollbar,
       scrollbarHover: activeThemePalette.terminal_scrollbar_hover,
+      fontFamily: activeThemePalette.terminal_font_family,
+      scrollbarWidth: activeThemePalette.terminal_scrollbar_width,
     };
   }, [activeThemePalette]);
 
@@ -2169,8 +2219,10 @@ export function ProjectDashboard() {
       "--alert-border": activeThemePalette.alert_border,
       "--alert-text": activeThemePalette.alert_text,
       "--accent": activeThemePalette.accent,
+      "--terminal-background": activeThemePalette.terminal_background,
       "--terminal-scrollbar-color": activeThemePalette.terminal_scrollbar,
       "--terminal-scrollbar-hover-color": activeThemePalette.terminal_scrollbar_hover,
+      "--terminal-scrollbar-target-width": `${activeThemePalette.terminal_scrollbar_width}px`,
       "--topbar-sidebar-width": `${sidebarWidth}px`,
     } as React.CSSProperties;
   }, [activeThemePalette, sidebarWidth]);

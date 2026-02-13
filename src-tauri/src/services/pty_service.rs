@@ -347,31 +347,87 @@ fn reader_thread(
     sessions: Arc<Mutex<HashMap<String, PtySession>>>,
 ) {
     let mut buf = [0u8; 4096];
+    let mut pending_utf8 = Vec::<u8>::new();
     let mut logged_chunk_count: usize = 0;
 
-    loop {
+    'reader_loop: loop {
         match reader.read(&mut buf) {
             Ok(0) => {
                 log::info!("PTY stream reached EOF sid={}", session_id);
                 break;
             }
             Ok(n) => {
-                let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                pending_utf8.extend_from_slice(&buf[..n]);
 
-                if logged_chunk_count < 6 {
-                    log::info!(
-                        "PTY output chunk sid={} idx={} bytes={} preview={}",
-                        session_id,
-                        logged_chunk_count,
-                        n,
-                        log_preview(&data)
-                    );
-                }
-                logged_chunk_count += 1;
+                while !pending_utf8.is_empty() {
+                    match std::str::from_utf8(&pending_utf8) {
+                        Ok(valid_text) => {
+                            if logged_chunk_count < 6 {
+                                log::info!(
+                                    "PTY output chunk sid={} idx={} bytes={} preview={}",
+                                    session_id,
+                                    logged_chunk_count,
+                                    valid_text.len(),
+                                    log_preview(valid_text)
+                                );
+                            }
+                            logged_chunk_count += 1;
 
-                if !emit_pty_output(&app_handle, &session_id, &data) {
-                    log::debug!("PTY output emit failed for session {}", session_id);
-                    break;
+                            if !emit_pty_output(&app_handle, &session_id, valid_text) {
+                                log::debug!("PTY output emit failed for session {}", session_id);
+                                break 'reader_loop;
+                            }
+
+                            pending_utf8.clear();
+                        }
+                        Err(utf8_error) => {
+                            let valid_up_to = utf8_error.valid_up_to();
+
+                            if valid_up_to > 0 {
+                                let valid_text =
+                                    std::str::from_utf8(&pending_utf8[..valid_up_to]).unwrap();
+
+                                if logged_chunk_count < 6 {
+                                    log::info!(
+                                        "PTY output chunk sid={} idx={} bytes={} preview={}",
+                                        session_id,
+                                        logged_chunk_count,
+                                        valid_up_to,
+                                        log_preview(valid_text)
+                                    );
+                                }
+                                logged_chunk_count += 1;
+
+                                if !emit_pty_output(&app_handle, &session_id, valid_text) {
+                                    log::debug!("PTY output emit failed for session {}", session_id);
+                                    break 'reader_loop;
+                                }
+
+                                pending_utf8.drain(0..valid_up_to);
+                                continue;
+                            }
+
+                            if utf8_error.error_len().is_none() {
+                                break;
+                            }
+
+                            pending_utf8.drain(0..1);
+                            if logged_chunk_count < 6 {
+                                log::info!(
+                                    "PTY output chunk sid={} idx={} bytes={} preview=�",
+                                    session_id,
+                                    logged_chunk_count,
+                                    1
+                                );
+                            }
+                            logged_chunk_count += 1;
+
+                            if !emit_pty_output(&app_handle, &session_id, "�") {
+                                log::debug!("PTY output emit failed for session {}", session_id);
+                                break 'reader_loop;
+                            }
+                        }
+                    }
                 }
             }
             Err(error) => {
@@ -556,4 +612,3 @@ fn shell_quote(value: &str) -> String {
 
     format!("'{}'", value.replace('\'', "'\\''"))
 }
-
