@@ -1,1 +1,31 @@
 .alma-snapshots
+
+# Dependencies and lock metadata
+node_modules/
+
+# Build outputs
+dist/
+dist-ssr/
+
+# Tauri / Rust build outputs
+src-tauri/target/
+target/
+
+# Tooling caches
+.vite/
+**/.vite/
+.pnpm-store/
+
+# Temporary/local artifacts
+.tmp-before.png
+*.tmp
+*.tmp.*
+
+# Environment files
+.env
+.env.*
+
+# OS/editor artifacts
+.DS_Store
+Thumbs.db
+*.log
