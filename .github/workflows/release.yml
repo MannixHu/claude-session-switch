@@ -147,19 +147,18 @@ jobs:
 
           APP_NAME="$(basename "${APP_PATH}" .app)"
           VERSION="${TAG_NAME#v}"
+          RELEASE_BASENAME="ClaudeSessionSwitch"
           if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
             ARCH_SUFFIX="arm64"
+            PREBUILT_PATTERN='*_aarch64.dmg'
           else
             ARCH_SUFFIX="x64"
+            PREBUILT_PATTERN='*_x64.dmg'
           fi
-          SAFE_APP_NAME="$(echo "${APP_NAME}" | tr ' ' '_')"
-          DMG_NAME="${SAFE_APP_NAME}_${VERSION}_${ARCH_SUFFIX}.dmg"
+          DMG_NAME="${RELEASE_BASENAME}_${VERSION}_${ARCH_SUFFIX}.dmg"
           DMG_PATH="release-assets/${DMG_NAME}"
 
-          PREBUILT_DMG="$(find "${BUNDLE_DIR}" -maxdepth 5 -type f -name "${SAFE_APP_NAME}_${VERSION}_${ARCH_SUFFIX}.dmg" | head -n 1)"
-          if [ -z "${PREBUILT_DMG}" ]; then
-            PREBUILT_DMG="$(find "${BUNDLE_DIR}" -maxdepth 5 -type f -name "*.dmg" | head -n 1)"
-          fi
+          PREBUILT_DMG="$(find "${BUNDLE_DIR}" -maxdepth 5 -type f -name "${PREBUILT_PATTERN}" | head -n 1)"
           if [ -n "${PREBUILT_DMG}" ]; then
             echo "Using prebuilt DMG: ${PREBUILT_DMG}"
             cp "${PREBUILT_DMG}" "${DMG_PATH}"
@@ -167,18 +166,6 @@ jobs:
             echo "No prebuilt DMG found, creating one from ${APP_PATH}"
             rm -f "${DMG_PATH}"
             hdiutil create -volname "${APP_NAME}" -srcfolder "${APP_PATH}" -ov -format UDZO "${DMG_PATH}"
-          fi
-
-          find "${BUNDLE_DIR}" -type f \
-            \( -name "*.app.tar.gz" -o -name "*.zip" \) \
-            -exec cp {} release-assets/ \;
-
-          if [ "${{ steps.signing.outputs.enabled }}" != "true" ]; then
-            printf '%s\n' \
-              'This macOS build is unsigned and not notarized.' \
-              'If Gatekeeper blocks launch, run:' \
-              'xattr -dr com.apple.quarantine "/Applications/Claude Session Switch.app"' \
-              > "release-assets/UNSIGNED_BUILD_NOTICE_${ARCH_SUFFIX}.txt"
           fi
 
           ls -lah release-assets
@@ -208,11 +195,6 @@ jobs:
           name: app-x64
           path: release-assets/x64
 
-      - name: Generate SHA256 checksums
-        run: |
-          find release-assets -type f -print
-          (cd release-assets && find arm64 x64 -type f -maxdepth 2 -print0 | xargs -0 sha256sum > SHA256SUMS.txt)
-
       - name: Create release with auto notes
         uses: softprops/action-gh-release@v2
         with:
@@ -222,6 +204,5 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            release-assets/arm64/*
-            release-assets/x64/*
-            release-assets/SHA256SUMS.txt
+            release-assets/arm64/*.dmg
+            release-assets/x64/*.dmg
