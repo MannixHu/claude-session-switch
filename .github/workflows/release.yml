@@ -121,6 +121,30 @@ jobs:
         if: steps.signing.outputs.enabled != 'true'
         run: pnpm exec tauri build --target ${{ matrix.target }}
 
+      - name: Ad-hoc sign app bundle (unsigned fallback)
+        if: steps.signing.outputs.enabled != 'true'
+        run: |
+          if [ -d "src-tauri/target/${{ matrix.target }}/release/bundle" ]; then
+            BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
+          elif [ -d "src-tauri/target/release/bundle" ]; then
+            BUNDLE_DIR="src-tauri/target/release/bundle"
+          else
+            echo "Bundle directory not found"
+            find src-tauri/target -maxdepth 5 -type d -name bundle || true
+            exit 1
+          fi
+
+          APP_PATH="$(find "${BUNDLE_DIR}" -maxdepth 4 -type d -name "*.app" | head -n 1)"
+          if [ -z "${APP_PATH}" ]; then
+            echo "No .app bundle found under ${BUNDLE_DIR}"
+            find "${BUNDLE_DIR}" -maxdepth 4 -print
+            exit 1
+          fi
+
+          echo "Ad-hoc signing app bundle: ${APP_PATH}"
+          codesign --force --deep --sign - "${APP_PATH}"
+          codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
+
       - name: Collect release assets
         run: |
           mkdir -p release-assets
@@ -153,19 +177,24 @@ jobs:
             PREBUILT_PATTERN='*_aarch64.dmg'
           else
             ARCH_SUFFIX="x64"
-            PREBUILT_PATTERN='*_x64.dmg'
           fi
           DMG_NAME="${RELEASE_BASENAME}_${VERSION}_${ARCH_SUFFIX}.dmg"
           DMG_PATH="release-assets/${DMG_NAME}"
 
-          PREBUILT_DMG="$(find "${BUNDLE_DIR}" -maxdepth 5 -type f -name "${PREBUILT_PATTERN}" | head -n 1)"
-          if [ -n "${PREBUILT_DMG}" ]; then
-            echo "Using prebuilt DMG: ${PREBUILT_DMG}"
-            cp "${PREBUILT_DMG}" "${DMG_PATH}"
-          else
-            echo "No prebuilt DMG found, creating one from ${APP_PATH}"
+          rm -f "${DMG_PATH}"
+          for ATTEMPT in 1 2 3; do
+            echo "Creating DMG (attempt ${ATTEMPT}): ${DMG_PATH}"
+            if hdiutil create -volname "${APP_NAME}" -srcfolder "${APP_PATH}" -ov -format UDZO "${DMG_PATH}"; then
+              break
+            fi
+            hdiutil detach "/Volumes/${APP_NAME}" -force || true
             rm -f "${DMG_PATH}"
-            hdiutil create -volname "${APP_NAME}" -srcfolder "${APP_PATH}" -ov -format UDZO "${DMG_PATH}"
+            sleep 2
+          done
+
+          if [ ! -f "${DMG_PATH}" ]; then
+            echo "Failed to create DMG after retries: ${DMG_PATH}"
+            exit 1
           fi
 
           ls -lah release-assets
