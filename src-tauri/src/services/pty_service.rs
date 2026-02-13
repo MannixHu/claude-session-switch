@@ -138,7 +138,6 @@ impl PtyManager {
             .openpty(size)
             .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
         let launch_script =
             launch_config.launch_script(normalized_session_id, normalized_working_dir);
 
@@ -150,10 +149,12 @@ impl PtyManager {
             );
         }
 
-        let mut cmd = CommandBuilder::new(&shell);
+        let mut cmd = CommandBuilder::new("/bin/zsh");
         if let Some(script) = launch_script {
-            cmd.arg("-lc");
+            cmd.arg("-ilc");
             cmd.arg(script);
+        } else {
+            cmd.arg("-il");
         }
         cmd.cwd(normalized_working_dir);
 
