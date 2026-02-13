@@ -100,6 +100,7 @@ jobs:
       - name: Collect release assets
         run: |
           mkdir -p release-assets
+          rm -f release-assets/*
 
           if [ -d "src-tauri/target/${{ matrix.target }}/release/bundle" ]; then
             BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
@@ -127,11 +128,19 @@ jobs:
           else
             ARCH_SUFFIX="x64"
           fi
-          DMG_NAME="${APP_NAME}_${VERSION}_${ARCH_SUFFIX}.dmg"
+          SAFE_APP_NAME="$(echo "${APP_NAME}" | tr ' ' '_')"
+          DMG_NAME="${SAFE_APP_NAME}_${VERSION}_${ARCH_SUFFIX}.dmg"
           DMG_PATH="release-assets/${DMG_NAME}"
 
-          echo "Creating DMG from signed app: ${DMG_PATH}"
-          hdiutil create -volname "${APP_NAME}" -srcfolder "${APP_PATH}" -ov -format UDZO "${DMG_PATH}"
+          PREBUILT_DMG="$(find "${BUNDLE_DIR}" -maxdepth 5 -type f -name "*.dmg" | head -n 1)"
+          if [ -n "${PREBUILT_DMG}" ]; then
+            echo "Using prebuilt DMG: ${PREBUILT_DMG}"
+            cp "${PREBUILT_DMG}" "${DMG_PATH}"
+          else
+            echo "No prebuilt DMG found, creating one from ${APP_PATH}"
+            rm -f "${DMG_PATH}"
+            hdiutil create -volname "${APP_NAME}" -srcfolder "${APP_PATH}" -ov -format UDZO "${DMG_PATH}"
+          fi
 
           find "${BUNDLE_DIR}" -type f \
             \( -name "*.app.tar.gz" -o -name "*.zip" \) \
