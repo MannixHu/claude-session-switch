@@ -181,10 +181,14 @@ jobs:
           DMG_NAME="${RELEASE_BASENAME}_${VERSION}_${ARCH_SUFFIX}.dmg"
           DMG_PATH="release-assets/${DMG_NAME}"
 
+          DMG_STAGING_DIR="$(mktemp -d)"
+          cp -R "${APP_PATH}" "${DMG_STAGING_DIR}/"
+          ln -s /Applications "${DMG_STAGING_DIR}/Applications"
+
           rm -f "${DMG_PATH}"
           for ATTEMPT in 1 2 3; do
             echo "Creating DMG (attempt ${ATTEMPT}): ${DMG_PATH}"
-            if hdiutil create -volname "${APP_NAME}" -srcfolder "${APP_PATH}" -ov -format UDZO "${DMG_PATH}"; then
+            if hdiutil create -volname "${APP_NAME}" -srcfolder "${DMG_STAGING_DIR}" -ov -format UDZO "${DMG_PATH}"; then
               break
             fi
             hdiutil detach "/Volumes/${APP_NAME}" -force || true
@@ -196,6 +200,8 @@ jobs:
             echo "Failed to create DMG after retries: ${DMG_PATH}"
             exit 1
           fi
+
+          rm -rf "${DMG_STAGING_DIR}"
 
           ls -lah release-assets
 
