@@ -148,7 +148,7 @@ jobs:
           APP_NAME="$(basename "${APP_PATH}" .app)"
           VERSION="${TAG_NAME#v}"
           if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
-            ARCH_SUFFIX="aarch64"
+            ARCH_SUFFIX="arm64"
           else
             ARCH_SUFFIX="x64"
           fi
