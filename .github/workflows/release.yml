@@ -178,7 +178,7 @@ jobs:
               'This macOS build is unsigned and not notarized.' \
               'If Gatekeeper blocks launch, run:' \
               'xattr -dr com.apple.quarantine "/Applications/Claude Session Switch.app"' \
-              > release-assets/UNSIGNED_BUILD_NOTICE.txt
+              > "release-assets/UNSIGNED_BUILD_NOTICE_${ARCH_SUFFIX}.txt"
           fi
 
           ls -lah release-assets
