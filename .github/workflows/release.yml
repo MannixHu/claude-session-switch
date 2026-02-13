@@ -156,7 +156,10 @@ jobs:
           DMG_NAME="${SAFE_APP_NAME}_${VERSION}_${ARCH_SUFFIX}.dmg"
           DMG_PATH="release-assets/${DMG_NAME}"
 
-          PREBUILT_DMG="$(find "${BUNDLE_DIR}" -maxdepth 5 -type f -name "*.dmg" | head -n 1)"
+          PREBUILT_DMG="$(find "${BUNDLE_DIR}" -maxdepth 5 -type f -name "${SAFE_APP_NAME}_${VERSION}_${ARCH_SUFFIX}.dmg" | head -n 1)"
+          if [ -z "${PREBUILT_DMG}" ]; then
+            PREBUILT_DMG="$(find "${BUNDLE_DIR}" -maxdepth 5 -type f -name "*.dmg" | head -n 1)"
+          fi
           if [ -n "${PREBUILT_DMG}" ]; then
             echo "Using prebuilt DMG: ${PREBUILT_DMG}"
             cp "${PREBUILT_DMG}" "${DMG_PATH}"
@@ -171,11 +174,11 @@ jobs:
             -exec cp {} release-assets/ \;
 
           if [ "${{ steps.signing.outputs.enabled }}" != "true" ]; then
-            cat > release-assets/UNSIGNED_BUILD_NOTICE.txt << 'EOF'
-            This macOS build is unsigned and not notarized.
-            If Gatekeeper blocks launch, run:
-            xattr -dr com.apple.quarantine "/Applications/Claude Session Switch.app"
-            EOF
+            printf '%s\n' \
+              'This macOS build is unsigned and not notarized.' \
+              'If Gatekeeper blocks launch, run:' \
+              'xattr -dr com.apple.quarantine "/Applications/Claude Session Switch.app"' \
+              > release-assets/UNSIGNED_BUILD_NOTICE.txt
           fi
 
           ls -lah release-assets
