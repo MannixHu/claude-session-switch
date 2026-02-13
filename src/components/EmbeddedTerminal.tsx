@@ -426,13 +426,21 @@ export default function EmbeddedTerminal({
       };
 
       const showScrollbar = () => {
-        scheduleScrollableStateUpdate?.();
+        const hasScrollableContent = viewport.scrollHeight > viewport.clientHeight + 1;
+        containerEl.classList.toggle("has-scrollbar", hasScrollableContent);
 
-        if (!containerEl.classList.contains("has-scrollbar")) {
-          scheduleScrollableStateUpdate?.(true);
+        if (!hasScrollableContent) {
+          if (scrollbarHideTimerRef.current) {
+            clearTimeout(scrollbarHideTimerRef.current);
+            scrollbarHideTimerRef.current = null;
+          }
+
           containerEl.classList.remove("is-scrolling");
+          scheduleScrollableStateUpdate?.(true);
           return;
         }
+
+        scheduleScrollableStateUpdate?.();
 
         containerEl.classList.add("is-scrolling");
 

@@ -117,16 +117,24 @@
   background: var(--terminal-scrollbar-hover-color, rgba(100, 116, 139, 0.66));
 }
 
-.embedded-terminal .xterm-scrollable-element > .scrollbar {
+.embedded-terminal .xterm-scrollable-element > .scrollbar,
+.embedded-terminal .xterm-scrollable-element > .vertical,
+.embedded-terminal .xterm-scrollable-element > .horizontal {
   width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
   opacity: 0 !important;
   pointer-events: none;
   background: var(--terminal-background, transparent);
   transition: width 140ms ease, opacity 140ms ease;
 }
 
-.embedded-terminal .xterm-scrollable-element > .scrollbar > .slider {
+.embedded-terminal .xterm-scrollable-element > .scrollbar > .slider,
+.embedded-terminal .xterm-scrollable-element > .vertical > .slider,
+.embedded-terminal .xterm-scrollable-element > .horizontal > .slider {
   width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
   background: transparent !important;
   border-radius: 999px;
   transition: background-color 160ms ease;
@@ -135,7 +143,11 @@
 .embedded-terminal:not(.is-scrolling) .xterm-scrollable-element > .scrollbar,
 .embedded-terminal:not(.is-scrolling) .xterm-scrollable-element > .scrollbar > .slider,
 .embedded-terminal:not(.is-scrolling) .xterm-scrollable-element > .scrollbar.visible,
-.embedded-terminal:not(.is-scrolling) .xterm-scrollable-element > .scrollbar.visible > .slider {
+.embedded-terminal:not(.is-scrolling) .xterm-scrollable-element > .scrollbar.visible > .slider,
+.embedded-terminal:not(.is-scrolling) .xterm-scrollable-element > .vertical,
+.embedded-terminal:not(.is-scrolling) .xterm-scrollable-element > .vertical > .slider,
+.embedded-terminal:not(.is-scrolling) .xterm-scrollable-element > .horizontal,
+.embedded-terminal:not(.is-scrolling) .xterm-scrollable-element > .horizontal > .slider {
   width: 0 !important;
   opacity: 0 !important;
   pointer-events: none;
@@ -143,22 +155,36 @@
 
 .embedded-terminal.is-scrolling .xterm-scrollable-element > .scrollbar,
 .embedded-terminal.is-scrolling .xterm-scrollable-element > .scrollbar.invisible,
-.embedded-terminal.is-scrolling .xterm-scrollable-element > .scrollbar.visible {
+.embedded-terminal.is-scrolling .xterm-scrollable-element > .scrollbar.visible,
+.embedded-terminal.is-scrolling .xterm-scrollable-element > .vertical,
+.embedded-terminal.is-scrolling .xterm-scrollable-element > .horizontal,
+.embedded-terminal.is-scrolling .xterm-scrollable-element > .horizontal.invisible,
+.embedded-terminal.is-scrolling .xterm-scrollable-element > .horizontal.visible {
   width: var(--terminal-scrollbar-target-width, 6px) !important;
+  min-width: var(--terminal-scrollbar-target-width, 6px) !important;
+  max-width: var(--terminal-scrollbar-target-width, 6px) !important;
   opacity: 1 !important;
   pointer-events: auto;
 }
 
 .embedded-terminal.is-scrolling .xterm-scrollable-element > .scrollbar > .slider,
 .embedded-terminal.is-scrolling .xterm-scrollable-element > .scrollbar.invisible > .slider,
-.embedded-terminal.is-scrolling .xterm-scrollable-element > .scrollbar.visible > .slider {
+.embedded-terminal.is-scrolling .xterm-scrollable-element > .scrollbar.visible > .slider,
+.embedded-terminal.is-scrolling .xterm-scrollable-element > .vertical > .slider,
+.embedded-terminal.is-scrolling .xterm-scrollable-element > .horizontal > .slider,
+.embedded-terminal.is-scrolling .xterm-scrollable-element > .horizontal.visible > .slider,
+.embedded-terminal.is-scrolling .xterm-scrollable-element > .horizontal.invisible > .slider {
   width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
   background: var(--terminal-scrollbar-color, rgba(100, 116, 139, 0.48)) !important;
 }
 
 .embedded-terminal.is-scrolling .xterm-scrollable-element > .scrollbar > .slider:hover,
 .embedded-terminal.is-scrolling .xterm-scrollable-element > .scrollbar.visible > .slider:hover,
-.embedded-terminal.is-scrolling .xterm-scrollable-element > .scrollbar.invisible > .slider:hover {
+.embedded-terminal.is-scrolling .xterm-scrollable-element > .scrollbar.invisible > .slider:hover,
+.embedded-terminal.is-scrolling .xterm-scrollable-element > .vertical > .slider:hover,
+.embedded-terminal.is-scrolling .xterm-scrollable-element > .horizontal > .slider:hover {
   background: var(--terminal-scrollbar-hover-color, rgba(100, 116, 139, 0.66)) !important;
 }
 
