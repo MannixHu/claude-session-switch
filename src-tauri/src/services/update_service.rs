@@ -319,7 +319,10 @@ impl UpdateService {
             .flush()
             .map_err(|error| format!("Failed to flush downloaded installer: {}", error))?;
 
-        Self::verify_sha256(&destination_path, expected_sha256)?;
+        if let Err(error) = Self::verify_sha256(&destination_path, expected_sha256) {
+            let _ = fs::remove_file(&destination_path);
+            return Err(error);
+        }
 
         Ok(destination_path)
     }
