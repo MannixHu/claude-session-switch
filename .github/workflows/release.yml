@@ -121,40 +121,13 @@ jobs:
         if: steps.signing.outputs.enabled != 'true'
         run: pnpm exec tauri build --target ${{ matrix.target }} --bundles app
 
-      - name: Write bundle helper script
-        run: |
-          cat > /tmp/find-bundle.sh << 'SCRIPT'
-          #!/bin/bash
-          set -euo pipefail
-
-          TARGET="$1"
-
-          if [ -d "src-tauri/target/${TARGET}/release/bundle" ]; then
-            BUNDLE_DIR="src-tauri/target/${TARGET}/release/bundle"
-          elif [ -d "src-tauri/target/release/bundle" ]; then
-            BUNDLE_DIR="src-tauri/target/release/bundle"
-          else
-            echo "::error::Bundle directory not found" >&2
-            find src-tauri/target -maxdepth 5 -type d -name bundle >&2 || true
-            exit 1
-          fi
-
-          APP_PATH="$(find "${BUNDLE_DIR}" -maxdepth 4 -type d -name "*.app" | head -n 1)"
-          if [ -z "${APP_PATH}" ]; then
-            echo "::error::No .app bundle found under ${BUNDLE_DIR}" >&2
-            find "${BUNDLE_DIR}" -maxdepth 4 -print >&2
-            exit 1
-          fi
-
-          echo "BUNDLE_DIR=${BUNDLE_DIR}"
-          echo "APP_PATH=${APP_PATH}"
-          SCRIPT
-          chmod +x /tmp/find-bundle.sh
+      - name: Ensure bundle helper is executable
+        run: chmod +x scripts/find-bundle-env.sh
 
       - name: Ad-hoc sign app bundle (unsigned fallback)
         if: steps.signing.outputs.enabled != 'true'
         run: |
-          eval "$(/tmp/find-bundle.sh "${{ matrix.target }}")"
+          eval "$(scripts/find-bundle-env.sh "${{ matrix.target }}")"
 
           echo "Ad-hoc signing app bundle: ${APP_PATH}"
           codesign --force --deep --sign - "${APP_PATH}"
@@ -162,7 +135,7 @@ jobs:
 
       - name: Collect release assets
         run: |
-          eval "$(/tmp/find-bundle.sh "${{ matrix.target }}")"
+          eval "$(scripts/find-bundle-env.sh "${{ matrix.target }}")"
 
           echo "Using bundle directory: ${BUNDLE_DIR}"
 
