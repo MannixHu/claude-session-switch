@@ -64,3 +64,4 @@ __unconfig_*
 *.gz
 *.rar
 *.7z
+.worktrees/
