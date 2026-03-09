@@ -1,5 +1,18 @@
+use reqwest::blocking::Client;
+use reqwest::header::{ACCEPT, HeaderMap, HeaderValue, USER_AGENT};
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::fs;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+const GITHUB_LATEST_RELEASE_API_URL: &str =
+    "https://api.github.com/repos/MannixHu/claude-session-switch/releases/latest";
+const GITHUB_API_ACCEPT: &str = "application/vnd.github+json";
+const GITHUB_USER_AGENT: &str = "ClaudeSessionSwitchUpdater/1.0";
+const UPDATE_TEMP_DIR_NAME: &str = "claude-session-switch-updates";
 
 #[derive(Debug, Deserialize)]
 struct GithubRelease {
@@ -28,6 +41,20 @@ pub struct UpdateCheckResult {
 pub struct UpdateService;
 
 impl UpdateService {
+    fn build_http_client() -> Result<Client, String> {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static(GITHUB_API_ACCEPT),
+        );
+        headers.insert(USER_AGENT, HeaderValue::from_static(GITHUB_USER_AGENT));
+
+        Client::builder()
+            .default_headers(headers)
+            .build()
+            .map_err(|error| format!("Failed to build HTTP client: {}", error))
+    }
+
     fn normalize_version_tag(value: &str) -> Result<String, String> {
         let normalized = value.trim().trim_start_matches('v');
         if normalized.is_empty() {
@@ -66,6 +93,32 @@ impl UpdateService {
             .collect()
     }
 
+    fn parse_release(release_json: &str) -> Result<GithubRelease, String> {
+        serde_json::from_str(release_json)
+            .map_err(|error| format!("Failed to parse latest release payload: {}", error))
+    }
+
+    fn find_checksum_asset_url(release: &GithubRelease) -> Result<String, String> {
+        release
+            .assets
+            .iter()
+            .find(|asset| asset.name == "SHA256SUMS")
+            .map(|asset| asset.browser_download_url.clone())
+            .ok_or_else(|| "Latest release is missing SHA256SUMS".to_string())
+    }
+
+    fn update_temp_dir() -> Result<PathBuf, String> {
+        let temp_dir = std::env::temp_dir().join(UPDATE_TEMP_DIR_NAME);
+        fs::create_dir_all(&temp_dir).map_err(|error| {
+            format!(
+                "Failed to create update temp directory {}: {}",
+                temp_dir.display(),
+                error
+            )
+        })?;
+        Ok(temp_dir)
+    }
+
     pub fn resolve_release(
         current_version: &str,
         arch: &str,
@@ -73,8 +126,7 @@ impl UpdateService {
         checksums: &str,
     ) -> Result<UpdateCheckResult, String> {
         let normalized_current = Self::normalize_version_tag(current_version)?;
-        let release: GithubRelease = serde_json::from_str(release_json)
-            .map_err(|error| format!("Failed to parse latest release payload: {}", error))?;
+        let release = Self::parse_release(release_json)?;
         let normalized_latest = Self::normalize_version_tag(&release.tag_name)?;
 
         let current = Version::parse(&normalized_current)
@@ -131,11 +183,172 @@ impl UpdateService {
             expected_sha256,
         })
     }
+
+    pub fn fetch_latest_release_info(
+        current_version: &str,
+        arch: &str,
+    ) -> Result<UpdateCheckResult, String> {
+        let client = Self::build_http_client()?;
+
+        let release_json = client
+            .get(GITHUB_LATEST_RELEASE_API_URL)
+            .send()
+            .map_err(|error| format!("Failed to fetch latest release: {}", error))?
+            .error_for_status()
+            .map_err(|error| format!("Latest release request failed: {}", error))?
+            .text()
+            .map_err(|error| format!("Failed to read latest release response: {}", error))?;
+
+        let release = Self::parse_release(&release_json)?;
+        let normalized_current = Self::normalize_version_tag(current_version)?;
+        let normalized_latest = Self::normalize_version_tag(&release.tag_name)?;
+
+        let current = Version::parse(&normalized_current)
+            .map_err(|error| format!("Invalid current version {}: {}", normalized_current, error))?;
+        let latest = Version::parse(&normalized_latest)
+            .map_err(|error| format!("Invalid latest version {}: {}", normalized_latest, error))?;
+        let target_arch = Self::release_arch_suffix(arch)?.to_string();
+
+        if latest <= current {
+            return Ok(UpdateCheckResult {
+                current_version: normalized_current,
+                latest_version: normalized_latest,
+                update_available: false,
+                target_arch,
+                asset_name: String::new(),
+                download_url: String::new(),
+                expected_sha256: String::new(),
+            });
+        }
+
+        let checksum_url = Self::find_checksum_asset_url(&release)?;
+        let checksums = client
+            .get(checksum_url)
+            .send()
+            .map_err(|error| format!("Failed to fetch release checksums: {}", error))?
+            .error_for_status()
+            .map_err(|error| format!("Release checksums request failed: {}", error))?
+            .text()
+            .map_err(|error| format!("Failed to read release checksums response: {}", error))?;
+
+        Self::resolve_release(&normalized_current, arch, &release_json, &checksums)
+    }
+
+    pub fn verify_sha256(path: &Path, expected_sha256: &str) -> Result<(), String> {
+        let expected = expected_sha256.trim().to_lowercase();
+        if expected.is_empty() {
+            return Err("Expected checksum cannot be empty".to_string());
+        }
+
+        let mut file = fs::File::open(path)
+            .map_err(|error| format!("Failed to open downloaded file {}: {}", path.display(), error))?;
+        let mut hasher = Sha256::new();
+        let mut buffer = [0_u8; 16 * 1024];
+
+        loop {
+            let bytes_read = file
+                .read(&mut buffer)
+                .map_err(|error| format!("Failed to read downloaded file {}: {}", path.display(), error))?;
+            if bytes_read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..bytes_read]);
+        }
+
+        let actual = format!("{:x}", hasher.finalize());
+        if actual != expected {
+            return Err(format!(
+                "Downloaded file checksum mismatch for {}: expected {}, got {}",
+                path.display(),
+                expected,
+                actual
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub fn download_update(
+        download_url: &str,
+        asset_name: &str,
+        expected_sha256: &str,
+    ) -> Result<PathBuf, String> {
+        let normalized_url = download_url.trim();
+        if normalized_url.is_empty() {
+            return Err("Download URL cannot be empty".to_string());
+        }
+
+        let normalized_asset_name = asset_name.trim();
+        if normalized_asset_name.is_empty() {
+            return Err("Asset name cannot be empty".to_string());
+        }
+
+        let destination_dir = Self::update_temp_dir()?;
+        let destination_path = destination_dir.join(normalized_asset_name);
+        let client = Self::build_http_client()?;
+        let mut response = client
+            .get(normalized_url)
+            .send()
+            .map_err(|error| format!("Failed to download update asset: {}", error))?
+            .error_for_status()
+            .map_err(|error| format!("Update asset request failed: {}", error))?;
+
+        let mut output = fs::File::create(&destination_path).map_err(|error| {
+            format!(
+                "Failed to create downloaded installer {}: {}",
+                destination_path.display(),
+                error
+            )
+        })?;
+
+        let mut buffer = [0_u8; 16 * 1024];
+        loop {
+            let bytes_read = response
+                .read(&mut buffer)
+                .map_err(|error| format!("Failed to read update response body: {}", error))?;
+            if bytes_read == 0 {
+                break;
+            }
+
+            output
+                .write_all(&buffer[..bytes_read])
+                .map_err(|error| format!("Failed to write downloaded installer: {}", error))?;
+        }
+
+        output
+            .flush()
+            .map_err(|error| format!("Failed to flush downloaded installer: {}", error))?;
+
+        Self::verify_sha256(&destination_path, expected_sha256)?;
+
+        Ok(destination_path)
+    }
+
+    pub fn open_downloaded_installer(path: &Path) -> Result<(), String> {
+        #[cfg(target_os = "macos")]
+        {
+            Command::new("open")
+                .arg(path)
+                .spawn()
+                .map_err(|error| {
+                    format!("Failed to open downloaded installer {}: {}", path.display(), error)
+                })?;
+            return Ok(());
+        }
+
+        #[allow(unreachable_code)]
+        Err(format!(
+            "Opening downloaded installers is only supported on macOS: {}",
+            path.display()
+        ))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::UpdateService;
+    use std::fs;
+    use uuid::Uuid;
 
     #[test]
     fn latest_release_selects_arm64_asset_and_checksum() {
@@ -208,5 +421,38 @@ mod tests {
         .unwrap_err();
 
         assert!(error.contains("arm64"));
+    }
+
+    #[test]
+    fn verify_downloaded_file_accepts_matching_sha256() {
+        let file_path = std::env::temp_dir().join(format!(
+            "claude-session-switch-update-test-{}.dmg",
+            Uuid::new_v4()
+        ));
+        fs::write(&file_path, b"hello world").unwrap();
+
+        let result = UpdateService::verify_sha256(
+            &file_path,
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+        );
+
+        let _ = fs::remove_file(&file_path);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn verify_downloaded_file_rejects_mismatched_sha256() {
+        let file_path = std::env::temp_dir().join(format!(
+            "claude-session-switch-update-test-{}.dmg",
+            Uuid::new_v4()
+        ));
+        fs::write(&file_path, b"hello world").unwrap();
+
+        let error = UpdateService::verify_sha256(&file_path, "deadbeef").unwrap_err();
+
+        let _ = fs::remove_file(&file_path);
+
+        assert!(error.contains("checksum"));
     }
 }

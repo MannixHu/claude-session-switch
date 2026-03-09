@@ -178,6 +178,8 @@ fn main() {
             commands::system::open_external_url,
             commands::system::get_available_editors,
             commands::system::open_project_in_editor,
+            commands::update::check_for_updates,
+            commands::update::download_and_open_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
