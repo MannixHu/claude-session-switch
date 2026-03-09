@@ -7,7 +7,7 @@ use uuid::Uuid;
 pub fn detect_available_terminals() -> Vec<TerminalApp> {
     let detected: Vec<TerminalApp> = TerminalApp::all()
         .into_iter()
-        .filter(|terminal| is_terminal_installed(terminal))
+        .filter(is_terminal_installed)
         .collect();
 
     if detected.is_empty() {

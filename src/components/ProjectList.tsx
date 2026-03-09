@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useBackend, Project } from "../hooks/useBackend";
 import "./ProjectList.css";
 
@@ -7,6 +7,54 @@ interface ProjectListProps {
   selectedProjectId?: string;
   refreshSignal?: number;
 }
+
+interface ProjectItemProps {
+  project: Project;
+  isSelected: boolean;
+  onSelect: (project: Project) => void;
+  onDelete: (e: React.MouseEvent<HTMLButtonElement>, projectId: string) => void;
+  onToggleFavorite: (e: React.MouseEvent<HTMLButtonElement>, projectId: string) => void;
+}
+
+const ProjectItem = React.memo(function ProjectItem({
+  project,
+  isSelected,
+  onSelect,
+  onDelete,
+  onToggleFavorite,
+}: ProjectItemProps) {
+  return (
+    <div
+      className={`project-item ${isSelected ? "selected" : ""}`}
+      onClick={() => onSelect(project)}
+    >
+      <div
+        className="project-color"
+        style={{ backgroundColor: project.color }}
+      ></div>
+      <div className="project-info">
+        <div className="project-name">{project.name}</div>
+        <div className="project-path">{project.path}</div>
+      </div>
+      <div className="project-actions">
+        <button
+          className="icon-btn favorite"
+          onClick={(e) => onToggleFavorite(e, project.id)}
+          title={project.is_favorited ? "Remove from favorites" : "Add to favorites"}
+        >
+          {project.is_favorited ? "★" : "☆"}
+        </button>
+        <button
+          className="icon-btn delete"
+          onClick={(e) => onDelete(e, project.id)}
+          title="Delete project"
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  );
+});
 
 export function ProjectList({
   onSelectProject,
@@ -19,19 +67,18 @@ export function ProjectList({
   const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
+    const loadProjects = async () => {
+      try {
+        const data = await listProjects();
+        setProjects(data);
+      } catch (err) {
+        console.error("Failed to load projects", err);
+      }
+    };
     loadProjects();
-  }, [refreshSignal]);
+  }, [refreshSignal, listProjects]);
 
-  const loadProjects = async () => {
-    try {
-      const data = await listProjects();
-      setProjects(data);
-    } catch (err) {
-      console.error("Failed to load projects", err);
-    }
-  };
-
-  const handleDelete = async (
+  const handleDelete = useCallback(async (
     e: React.MouseEvent<HTMLButtonElement>,
     projectId: string
   ) => {
@@ -45,9 +92,9 @@ export function ProjectList({
     } catch (err) {
       console.error("Failed to delete project", err);
     }
-  };
+  }, [deleteProject]);
 
-  const handleToggleFavorite = async (
+  const handleToggleFavorite = useCallback(async (
     e: React.MouseEvent<HTMLButtonElement>,
     projectId: string
   ) => {
@@ -60,14 +107,19 @@ export function ProjectList({
     } catch (err) {
       console.error("Failed to toggle favorite", err);
     }
-  };
+  }, [toggleFavorite]);
 
-  const filteredProjects = projects.filter((project) =>
-    project.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const { filteredProjects, favorited, regular } = useMemo(() => {
+    const filtered = projects.filter((project) =>
+      project.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
-  const favorited = filteredProjects.filter((p) => p.is_favorited);
-  const regular = filteredProjects.filter((p) => !p.is_favorited);
+    return {
+      filteredProjects: filtered,
+      favorited: filtered.filter((p) => p.is_favorited),
+      regular: filtered.filter((p) => !p.is_favorited),
+    };
+  }, [projects, searchTerm]);
 
   return (
     <div className="project-list">
@@ -90,38 +142,14 @@ export function ProjectList({
         <div className="project-group">
           <div className="group-title">Favorites</div>
           {favorited.map((project) => (
-            <div
+            <ProjectItem
               key={project.id}
-              className={`project-item ${
-                selectedProjectId === project.id ? "selected" : ""
-              }`}
-              onClick={() => onSelectProject(project)}
-            >
-              <div
-                className="project-color"
-                style={{ backgroundColor: project.color }}
-              ></div>
-              <div className="project-info">
-                <div className="project-name">{project.name}</div>
-                <div className="project-path">{project.path}</div>
-              </div>
-              <div className="project-actions">
-                <button
-                  className="icon-btn favorite"
-                  onClick={(e) => handleToggleFavorite(e, project.id)}
-                  title="Remove from favorites"
-                >
-                  ★
-                </button>
-                <button
-                  className="icon-btn delete"
-                  onClick={(e) => handleDelete(e, project.id)}
-                  title="Delete project"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
+              project={project}
+              isSelected={selectedProjectId === project.id}
+              onSelect={onSelectProject}
+              onDelete={handleDelete}
+              onToggleFavorite={handleToggleFavorite}
+            />
           ))}
         </div>
       )}
@@ -130,38 +158,14 @@ export function ProjectList({
         <div className="project-group">
           {favorited.length > 0 && <div className="group-title">All Projects</div>}
           {regular.map((project) => (
-            <div
+            <ProjectItem
               key={project.id}
-              className={`project-item ${
-                selectedProjectId === project.id ? "selected" : ""
-              }`}
-              onClick={() => onSelectProject(project)}
-            >
-              <div
-                className="project-color"
-                style={{ backgroundColor: project.color }}
-              ></div>
-              <div className="project-info">
-                <div className="project-name">{project.name}</div>
-                <div className="project-path">{project.path}</div>
-              </div>
-              <div className="project-actions">
-                <button
-                  className="icon-btn favorite"
-                  onClick={(e) => handleToggleFavorite(e, project.id)}
-                  title="Add to favorites"
-                >
-                  ☆
-                </button>
-                <button
-                  className="icon-btn delete"
-                  onClick={(e) => handleDelete(e, project.id)}
-                  title="Delete project"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
+              project={project}
+              isSelected={selectedProjectId === project.id}
+              onSelect={onSelectProject}
+              onDelete={handleDelete}
+              onToggleFavorite={handleToggleFavorite}
+            />
           ))}
         </div>
       )}

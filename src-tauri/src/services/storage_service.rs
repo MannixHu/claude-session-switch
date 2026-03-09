@@ -4,18 +4,11 @@ use std::path::{Path, PathBuf};
 
 pub struct StorageService;
 
+pub(crate) const DATA_DIR_OVERRIDE_ENV: &str = "CLOUD_CODE_SESSION_MANAGER_DATA_DIR";
+
 impl StorageService {
     pub fn app_data_dir() -> PathBuf {
-        let base_dir = dirs::data_local_dir().unwrap_or_else(|| {
-            let fallback = std::env::temp_dir();
-            log::warn!(
-                "Failed to resolve local data directory; using temp dir fallback: {}",
-                fallback.display()
-            );
-            fallback
-        });
-
-        let data_dir = base_dir.join("CloudCodeSessionManager");
+        let data_dir = Self::resolve_app_data_dir();
 
         if let Err(error) = fs::create_dir_all(&data_dir) {
             log::warn!(
@@ -26,6 +19,26 @@ impl StorageService {
         }
 
         data_dir
+    }
+
+    fn resolve_app_data_dir() -> PathBuf {
+        if let Some(override_dir) = std::env::var_os(DATA_DIR_OVERRIDE_ENV) {
+            let normalized = override_dir.to_string_lossy().trim().to_string();
+            if !normalized.is_empty() {
+                return PathBuf::from(normalized);
+            }
+        }
+
+        let base_dir = dirs::data_local_dir().unwrap_or_else(|| {
+            let fallback = std::env::temp_dir();
+            log::warn!(
+                "Failed to resolve local data directory; using temp dir fallback: {}",
+                fallback.display()
+            );
+            fallback
+        });
+
+        base_dir.join("CloudCodeSessionManager")
     }
 
     pub fn projects_file() -> PathBuf {
@@ -86,5 +99,48 @@ impl StorageService {
             .unwrap_or_default();
 
         path.with_file_name(format!("{}.{}.tmp", file_name, nanos))
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn storage_test_env_lock() -> &'static std::sync::Mutex<()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+}
+
+#[cfg(test)]
+pub(crate) fn unique_test_data_dir(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "ccsm-storage-test-{}-{}",
+        name,
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|value| value.as_nanos())
+            .unwrap_or_default()
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        storage_test_env_lock, unique_test_data_dir, StorageService, DATA_DIR_OVERRIDE_ENV,
+    };
+    use std::fs;
+
+    #[test]
+    fn app_data_dir_prefers_explicit_override() {
+        let _guard = storage_test_env_lock().lock().unwrap();
+        let override_dir = unique_test_data_dir("override");
+
+        std::env::set_var(DATA_DIR_OVERRIDE_ENV, &override_dir);
+
+        let resolved = StorageService::app_data_dir();
+
+        std::env::remove_var(DATA_DIR_OVERRIDE_ENV);
+
+        assert_eq!(resolved, override_dir);
+        assert!(resolved.is_dir());
+
+        let _ = fs::remove_dir_all(resolved);
     }
 }

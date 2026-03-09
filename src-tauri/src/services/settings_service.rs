@@ -36,14 +36,12 @@ impl SettingsService {
 
     pub fn set_settings(&self, settings: AppSettings) -> Result<AppSettings, String> {
         let mut guard = self.settings.lock().map_err(|e| e.to_string())?;
-        let normalized = Self::normalize(settings);
-
-        *guard = normalized.clone();
+        *guard = Self::normalize(settings);
 
         StorageService::write(&StorageService::preferences_file(), &*guard)
             .map_err(|e| format!("Failed to save settings: {}", e))?;
 
-        Ok(normalized)
+        Ok(guard.clone())
     }
 
     fn normalize_non_empty(value: &str, fallback: &str) -> String {
@@ -103,8 +101,10 @@ impl SettingsService {
             &palette.terminal_scrollbar_hover,
             &defaults.terminal_scrollbar_hover,
         );
-        palette.terminal_font_family =
-            Self::normalize_non_empty(&palette.terminal_font_family, &defaults.terminal_font_family);
+        palette.terminal_font_family = Self::normalize_non_empty(
+            &palette.terminal_font_family,
+            &defaults.terminal_font_family,
+        );
         palette.terminal_scrollbar_width = Self::normalize_scrollbar_width(
             palette.terminal_scrollbar_width,
             defaults.terminal_scrollbar_width,
@@ -228,7 +228,6 @@ impl SettingsService {
             terminal_scrollbar_width: 0,
         }
     }
-
 
     fn legacy_light_defaults_v8() -> ThemePalette {
         ThemePalette {
@@ -411,6 +410,21 @@ impl SettingsService {
                 }
 
                 Some((trimmed_key.to_string(), trimmed_value.to_string()))
+            })
+            .collect();
+
+        settings.sessions.hidden = settings
+            .sessions
+            .hidden
+            .into_iter()
+            .filter_map(|(key, value)| {
+                let trimmed_key = key.trim();
+
+                if trimmed_key.is_empty() || !value {
+                    return None;
+                }
+
+                Some((trimmed_key.to_string(), true))
             })
             .collect();
 

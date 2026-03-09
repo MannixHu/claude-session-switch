@@ -40,7 +40,7 @@ impl ProjectService {
 
         if let Some(existing) = projects
             .iter_mut()
-            .find(|project| Self::is_same_project(project, &normalized_name, &normalized_path))
+            .find(|project| Self::has_same_project_path(project, &normalized_path))
         {
             existing.name = normalized_name;
             existing.path = normalized_path;
@@ -101,11 +101,9 @@ impl ProjectService {
         }
 
         if projects.iter().any(|item| {
-            item.id != project.id
-                && Self::normalize_project_name(&item.name) == normalized_name
-                && Self::normalize_project_path(&item.path) == normalized_path
+            item.id != project.id && Self::normalize_project_path(&item.path) == normalized_path
         }) {
-            return Err("A project with the same name and path already exists".to_string());
+            return Err("A project with the same path already exists".to_string());
         }
 
         if let Some(pos) = projects.iter().position(|p| p.id == project.id) {
@@ -163,6 +161,70 @@ impl ProjectService {
         }
     }
 
+    pub fn add_session_to_project(&self, project_id: &str, session_id: &str) -> Result<(), String> {
+        let normalized_project_id = project_id.trim();
+        if normalized_project_id.is_empty() {
+            return Err("Project id cannot be empty".to_string());
+        }
+
+        let normalized_session_id = session_id.trim();
+        if normalized_session_id.is_empty() {
+            return Err("Session id cannot be empty".to_string());
+        }
+
+        let mut projects = self.projects.lock().map_err(|e| e.to_string())?;
+        let project = projects
+            .iter_mut()
+            .find(|item| item.id == normalized_project_id)
+            .ok_or_else(|| format!("Project not found: {}", normalized_project_id))?;
+
+        if project
+            .session_ids
+            .iter()
+            .all(|item| item != normalized_session_id)
+        {
+            project.session_ids.push(normalized_session_id.to_string());
+            project.updated_at = chrono::Utc::now().to_rfc3339();
+            Self::persist_projects(&projects)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn remove_session_from_project(
+        &self,
+        project_id: &str,
+        session_id: &str,
+    ) -> Result<(), String> {
+        let normalized_project_id = project_id.trim();
+        if normalized_project_id.is_empty() {
+            return Err("Project id cannot be empty".to_string());
+        }
+
+        let normalized_session_id = session_id.trim();
+        if normalized_session_id.is_empty() {
+            return Err("Session id cannot be empty".to_string());
+        }
+
+        let mut projects = self.projects.lock().map_err(|e| e.to_string())?;
+        let project = projects
+            .iter_mut()
+            .find(|item| item.id == normalized_project_id)
+            .ok_or_else(|| format!("Project not found: {}", normalized_project_id))?;
+
+        let original_len = project.session_ids.len();
+        project
+            .session_ids
+            .retain(|item| item != normalized_session_id);
+
+        if project.session_ids.len() != original_len {
+            project.updated_at = chrono::Utc::now().to_rfc3339();
+            Self::persist_projects(&projects)?;
+        }
+
+        Ok(())
+    }
+
     fn persist_projects(projects: &[Project]) -> Result<(), String> {
         StorageService::write(&StorageService::projects_file(), &projects)
             .map_err(|error| format!("Failed to save projects: {}", error))
@@ -185,16 +247,15 @@ impl ProjectService {
         normalized
     }
 
-    fn is_same_project(project: &Project, normalized_name: &str, normalized_path: &str) -> bool {
-        Self::normalize_project_name(&project.name) == normalized_name
-            && Self::normalize_project_path(&project.path) == normalized_path
+    fn has_same_project_path(project: &Project, normalized_path: &str) -> bool {
+        Self::normalize_project_path(&project.path) == normalized_path
     }
 
     fn dedupe_projects(projects: &mut Vec<Project>) -> bool {
         let original_len = projects.len();
 
         let mut merged: Vec<Project> = Vec::with_capacity(projects.len());
-        let mut index_by_key: HashMap<(String, String), usize> = HashMap::new();
+        let mut index_by_path: HashMap<String, usize> = HashMap::new();
         let mut changed = false;
 
         for mut project in projects.drain(..) {
@@ -212,11 +273,15 @@ impl ProjectService {
                 changed = true;
             }
 
-            let key = (normalized_name, normalized_path);
-
-            if let Some(&target_idx) = index_by_key.get(&key) {
+            if let Some(&target_idx) = index_by_path.get(&normalized_path) {
                 changed = true;
                 let target = &mut merged[target_idx];
+
+                if !project.name.trim().is_empty()
+                    && (target.name.trim().is_empty() || project.updated_at >= target.updated_at)
+                {
+                    target.name = project.name.clone();
+                }
 
                 if target.description.trim().is_empty() && !project.description.trim().is_empty() {
                     target.description = project.description;
@@ -231,7 +296,8 @@ impl ProjectService {
                 let mut existing_session_ids: HashSet<String> =
                     target.session_ids.iter().cloned().collect();
                 for session_id in project.session_ids {
-                    if existing_session_ids.insert(session_id.clone()) {
+                    if !existing_session_ids.contains(&session_id) {
+                        existing_session_ids.insert(session_id.clone());
                         target.session_ids.push(session_id);
                     }
                 }
@@ -244,7 +310,7 @@ impl ProjectService {
                     target.updated_at = project.updated_at;
                 }
             } else {
-                index_by_key.insert(key, merged.len());
+                index_by_path.insert(normalized_path, merged.len());
                 merged.push(project);
             }
         }
@@ -261,5 +327,79 @@ impl ProjectService {
 impl Default for ProjectService {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProjectService;
+    use crate::models::Project;
+
+    fn project(
+        id: &str,
+        name: &str,
+        path: &str,
+        description: &str,
+        color: &str,
+        is_favorited: bool,
+        session_ids: &[&str],
+        created_at: &str,
+        updated_at: &str,
+    ) -> Project {
+        Project {
+            id: id.to_string(),
+            name: name.to_string(),
+            description: description.to_string(),
+            path: path.to_string(),
+            color: color.to_string(),
+            is_favorited,
+            session_ids: session_ids
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
+            created_at: created_at.to_string(),
+            updated_at: updated_at.to_string(),
+        }
+    }
+
+    #[test]
+    fn dedupe_projects_merges_same_path_even_when_names_differ() {
+        let mut projects = vec![
+            project(
+                "one",
+                "Alpha",
+                "/tmp/demo/",
+                "",
+                "#3B82F6",
+                false,
+                &["session-a"],
+                "2024-01-02T00:00:00Z",
+                "2024-01-02T00:00:00Z",
+            ),
+            project(
+                "two",
+                "Beta",
+                "/tmp/demo",
+                "Imported project",
+                "#ef4444",
+                true,
+                &["session-b", "session-a"],
+                "2024-01-01T00:00:00Z",
+                "2024-01-03T00:00:00Z",
+            ),
+        ];
+
+        let changed = ProjectService::dedupe_projects(&mut projects);
+
+        assert!(changed);
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].path, "/tmp/demo");
+        assert_eq!(projects[0].name, "Beta");
+        assert_eq!(projects[0].description, "Imported project");
+        assert_eq!(projects[0].color, "#ef4444");
+        assert!(projects[0].is_favorited);
+        assert_eq!(projects[0].session_ids, vec!["session-a", "session-b"]);
+        assert_eq!(projects[0].created_at, "2024-01-01T00:00:00Z");
+        assert_eq!(projects[0].updated_at, "2024-01-03T00:00:00Z");
     }
 }

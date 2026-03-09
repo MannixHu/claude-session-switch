@@ -1,6 +1,6 @@
 {
   "name": "claude-session-switch",
-  "version": "0.1.4",
+  "version": "0.1.15",
   "private": true,
   "description": "Desktop Claude Code session switcher with embedded terminal, project grouping, and resume support",
   "type": "module",
@@ -21,9 +21,10 @@
   "scripts": {
     "dev": "tauri dev",
     "dev:ui": "vite",
-    "build": "tauri build",
+    "build": "tauri build --bundles app && bash scripts/package-dmg.sh",
     "build:ui": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "package:dmg": "bash scripts/package-dmg.sh"
   },
   "dependencies": {
     "@tauri-apps/plugin-notification": "^2.3.3",

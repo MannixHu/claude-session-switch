@@ -44,10 +44,13 @@ Thumbs.db
 *.tmp
 *.tmp.*
 .tmp/
-.tmp-before.png
+.tmp-*
 *.swp
 *.swo
 *~
+
+# Auto-generated config files
+__unconfig_*
 
 # IDE artifacts
 .idea/

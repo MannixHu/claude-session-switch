@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Session, ShellType } from "../hooks/useBackend";
 import "./SessionDetailView.css";
 
@@ -33,19 +33,19 @@ export function SessionDetailView({
     history: false,
   });
 
-  const toggleSection = (section: string) => {
+  const toggleSection = useCallback((section: string) => {
     setExpandedSections((prev) => ({
       ...prev,
       [section]: !prev[section],
     }));
-  };
+  }, []);
 
-  const handleSave = () => {
+  const handleSave = useCallback(() => {
     onUpdate(editName, editShell, editWorkDir);
     setIsEditing(false);
-  };
+  }, [editName, editShell, editWorkDir, onUpdate]);
 
-  const handleOpenInTerminal = () => {
+  const handleOpenInTerminal = useCallback(() => {
     if (showTerminalSelector && selectedTerminal) {
       onOpenInTerminal(selectedTerminal);
       setShowTerminalSelector(false);
@@ -55,14 +55,24 @@ export function SessionDetailView({
     } else {
       onOpenInTerminal();
     }
-  };
+  }, [showTerminalSelector, selectedTerminal, availableTerminals, onOpenInTerminal]);
+
+  const terminalOptions = useMemo(
+    () => Object.entries(availableTerminals),
+    [availableTerminals]
+  );
+
+  const envVarsEntries = useMemo(
+    () => Object.entries(session.environment_variables || {}),
+    [session.environment_variables]
+  );
 
   return (
     <div className="session-detail-view">
       <div className="detail-header">
         <h2>{session.name}</h2>
         <div className="header-actions">
-          {showTerminalSelector && Object.keys(availableTerminals).length > 0 && (
+          {showTerminalSelector && terminalOptions.length > 0 && (
             <select
               className="terminal-selector"
               value={selectedTerminal}
@@ -70,7 +80,7 @@ export function SessionDetailView({
               disabled={loading}
             >
               <option value="">Select Terminal...</option>
-              {Object.entries(availableTerminals).map(([key, name]) => (
+              {terminalOptions.map(([key, name]) => (
                 <option key={key} value={key}>
                   {name}
                 </option>
@@ -81,6 +91,7 @@ export function SessionDetailView({
             className="primary-btn"
             onClick={handleOpenInTerminal}
             disabled={loading || (showTerminalSelector && !selectedTerminal)}
+            type="button"
           >
             {showTerminalSelector ? "Launch" : "Open in Terminal"}
           </button>
@@ -222,16 +233,14 @@ export function SessionDetailView({
         </div>
         {expandedSections.environment && (
           <div className="section-content">
-            {Object.keys(session.environment_variables || {}).length > 0 ? (
+            {envVarsEntries.length > 0 ? (
               <div className="env-list">
-                {Object.entries(session.environment_variables || {}).map(
-                  ([key, value]) => (
-                    <div key={key} className="env-item">
-                      <span className="env-key">{key}</span>
-                      <span className="env-value">{String(value)}</span>
-                    </div>
-                  )
-                )}
+                {envVarsEntries.map(([key, value]) => (
+                  <div key={key} className="env-item">
+                    <span className="env-key">{key}</span>
+                    <span className="env-value">{String(value)}</span>
+                  </div>
+                ))}
               </div>
             ) : (
               <div className="empty-state">No environment variables set</div>

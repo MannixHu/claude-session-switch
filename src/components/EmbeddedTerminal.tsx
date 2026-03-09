@@ -26,6 +26,7 @@ interface EmbeddedTerminalProps {
   isDark: boolean;
   themePalette?: EmbeddedTerminalThemePalette;
   claudeArgs?: string[];
+  onOutput?: (sessionId: string, data: string) => void;
 }
 
 const SCROLLBAR_HIDE_DELAY_MS = 280;
@@ -186,6 +187,7 @@ export default function EmbeddedTerminal({
   isDark,
   themePalette,
   claudeArgs = [],
+  onOutput,
 }: EmbeddedTerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -203,6 +205,7 @@ export default function EmbeddedTerminal({
   const ptyRenderFrameRef = useRef<number | null>(null);
   const ptyRenderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visibleRef = useRef(visible);
+  const onOutputRef = useRef(onOutput);
   const listenerReadyRef = useRef(false);
   const hasReceivedPtyOutputRef = useRef(false);
   const ptyCreateInFlightRef = useRef<Promise<void> | null>(null);
@@ -210,6 +213,10 @@ export default function EmbeddedTerminal({
   useEffect(() => {
     visibleRef.current = visible;
   }, [visible]);
+
+  useEffect(() => {
+    onOutputRef.current = onOutput;
+  }, [onOutput]);
 
   const fitTerminal = () => {
     if (!fitAddonRef.current || !containerRef.current) {
@@ -564,6 +571,7 @@ export default function EmbeddedTerminal({
           });
         }
 
+        onOutputRef.current?.(sessionId, data);
         queuePtyRender(data);
       });
       unlistenRef.current = unlisten;

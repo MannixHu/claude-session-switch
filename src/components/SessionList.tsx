@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useBackend, Session } from "../hooks/useBackend";
 import "./SessionList.css";
 
@@ -7,6 +7,42 @@ interface SessionListProps {
   onSelectSession: (session: Session) => void;
   selectedSessionId?: string;
 }
+
+interface SessionItemProps {
+  session: Session;
+  isSelected: boolean;
+  onSelect: (session: Session) => void;
+  onDelete: (e: React.MouseEvent<HTMLButtonElement>, sessionId: string) => void;
+}
+
+const SessionItem = React.memo(function SessionItem({
+  session,
+  isSelected,
+  onSelect,
+  onDelete,
+}: SessionItemProps) {
+  return (
+    <div
+      className={`session-item ${isSelected ? "selected" : ""}`}
+      onClick={() => onSelect(session)}
+    >
+      <div className="session-shell-badge">
+        {session.shell.toUpperCase()}
+      </div>
+      <div className="session-info">
+        <div className="session-name">{session.name}</div>
+        <div className="session-meta">{session.shell}</div>
+      </div>
+      <button
+        className="icon-btn delete"
+        onClick={(e) => onDelete(e, session.id)}
+        title="Delete session"
+      >
+        ×
+      </button>
+    </div>
+  );
+});
 
 export function SessionList({
   projectId,
@@ -18,19 +54,18 @@ export function SessionList({
   const [sessions, setSessions] = useState<Session[]>([]);
 
   useEffect(() => {
+    const loadSessions = async () => {
+      try {
+        const data = await listSessionsForProject(projectId);
+        setSessions(data);
+      } catch (err) {
+        console.error("Failed to load sessions", err);
+      }
+    };
     loadSessions();
-  }, [projectId]);
+  }, [projectId, listSessionsForProject]);
 
-  const loadSessions = async () => {
-    try {
-      const data = await listSessionsForProject(projectId);
-      setSessions(data);
-    } catch (err) {
-      console.error("Failed to load sessions", err);
-    }
-  };
-
-  const handleDelete = async (
+  const handleDelete = useCallback(async (
     e: React.MouseEvent<HTMLButtonElement>,
     sessionId: string
   ) => {
@@ -44,7 +79,7 @@ export function SessionList({
     } catch (err) {
       console.error("Failed to delete session", err);
     }
-  };
+  }, [deleteSession]);
 
   return (
     <div className="session-list">
@@ -58,28 +93,13 @@ export function SessionList({
       {sessions.length > 0 && (
         <div className="session-group">
           {sessions.map((session) => (
-            <div
+            <SessionItem
               key={session.id}
-              className={`session-item ${
-                selectedSessionId === session.id ? "selected" : ""
-              }`}
-              onClick={() => onSelectSession(session)}
-            >
-              <div className="session-shell-badge">
-                {session.shell.toUpperCase()}
-              </div>
-              <div className="session-info">
-                <div className="session-name">{session.name}</div>
-                <div className="session-meta">{session.shell}</div>
-              </div>
-              <button
-                className="icon-btn delete"
-                onClick={(e) => handleDelete(e, session.id)}
-                title="Delete session"
-              >
-                ×
-              </button>
-            </div>
+              session={session}
+              isSelected={selectedSessionId === session.id}
+              onSelect={onSelectSession}
+              onDelete={handleDelete}
+            />
           ))}
         </div>
       )}

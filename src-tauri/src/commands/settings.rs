@@ -16,8 +16,11 @@ pub fn set_app_settings(
     settings: AppSettings,
     state: State<'_, AppState>,
 ) -> Result<AppSettings, String> {
-    state.settings_service.set_settings(settings).map_err(|error| {
-        log::warn!("set_app_settings failed: {}", error);
-        error
-    })
+    state
+        .settings_service
+        .set_settings(settings)
+        .map_err(|error| {
+            log::warn!("set_app_settings failed: {}", error);
+            error
+        })
 }

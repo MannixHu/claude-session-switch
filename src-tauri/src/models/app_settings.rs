@@ -256,7 +256,7 @@ impl Default for IntegrationSettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UiSettings {
     #[serde(default)]
@@ -264,17 +264,6 @@ pub struct UiSettings {
     pub layout: LayoutSettings,
     pub window: WindowSettings,
     pub project_tree: ProjectTreeSettings,
-}
-
-impl Default for UiSettings {
-    fn default() -> Self {
-        Self {
-            sidebar_collapsed: false,
-            layout: LayoutSettings::default(),
-            window: WindowSettings::default(),
-            project_tree: ProjectTreeSettings::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -316,7 +305,7 @@ impl Default for WindowSettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProjectTreeSettings {
     #[serde(default)]
@@ -327,30 +316,11 @@ pub struct ProjectTreeSettings {
     pub project_order: Vec<String>,
 }
 
-impl Default for ProjectTreeSettings {
-    fn default() -> Self {
-        Self {
-            expanded_projects: HashMap::new(),
-            show_all_sessions: HashMap::new(),
-            project_order: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LastOpenedSession {
     pub project_path: String,
     pub session_id: String,
-}
-
-impl Default for LastOpenedSession {
-    fn default() -> Self {
-        Self {
-            project_path: String::new(),
-            session_id: String::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -358,6 +328,8 @@ impl Default for LastOpenedSession {
 pub struct SessionSettings {
     #[serde(default)]
     pub aliases: HashMap<String, String>,
+    #[serde(default)]
+    pub hidden: HashMap<String, bool>,
     #[serde(default = "default_restore_last_opened_session")]
     pub restore_last_opened_session: bool,
     #[serde(default)]
@@ -368,6 +340,7 @@ impl Default for SessionSettings {
     fn default() -> Self {
         Self {
             aliases: HashMap::new(),
+            hidden: HashMap::new(),
             restore_last_opened_session: default_restore_last_opened_session(),
             last_opened: None,
         }

@@ -1,4 +1,11 @@
-import { useState, useCallback } from "react";
+import {
+  createContext,
+  createElement,
+  ReactNode,
+  useCallback,
+  useContext,
+  useState,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 // Type definitions
@@ -93,14 +100,13 @@ export interface UpdateSessionInput {
 }
 
 interface BackendState {
-  loading: boolean;
+  pendingRequests: number;
   error: string | null;
 }
 
-// Main useBackend hook
-export function useBackend() {
+function useCreateBackend() {
   const [state, setState] = useState<BackendState>({
-    loading: false,
+    pendingRequests: 0,
     error: null,
   });
 
@@ -109,7 +115,12 @@ export function useBackend() {
   }, []);
 
   const setLoading = useCallback((loading: boolean) => {
-    setState((prev) => ({ ...prev, loading }));
+    setState((prev) => ({
+      ...prev,
+      pendingRequests: loading
+        ? prev.pendingRequests + 1
+        : Math.max(0, prev.pendingRequests - 1),
+    }));
   }, []);
 
   const setError = useCallback((error: string | null) => {
@@ -618,7 +629,7 @@ export function useBackend() {
 
   return {
     // State
-    loading: state.loading,
+    loading: state.pendingRequests > 0,
     error: state.error,
     clearError,
 
@@ -661,4 +672,27 @@ export function useBackend() {
     renameClaudeSession,
     deleteClaudeSession,
   };
+}
+
+type BackendApi = ReturnType<typeof useCreateBackend>;
+
+const BackendContext = createContext<BackendApi | null>(null);
+
+interface BackendProviderProps {
+  children: ReactNode;
+}
+
+export function BackendProvider({ children }: BackendProviderProps) {
+  const backend = useCreateBackend();
+
+  return createElement(BackendContext.Provider, { value: backend }, children);
+}
+
+export function useBackend(): BackendApi {
+  const backend = useContext(BackendContext);
+  if (!backend) {
+    throw new Error("useBackend must be used within BackendProvider");
+  }
+
+  return backend;
 }

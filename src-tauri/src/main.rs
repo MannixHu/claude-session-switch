@@ -111,11 +111,9 @@ fn build_app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result
 }
 
 fn main() {
-    let _ = env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info"),
-    )
-    .format_timestamp_millis()
-    .try_init();
+    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format_timestamp_millis()
+        .try_init();
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

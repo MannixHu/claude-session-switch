@@ -44,6 +44,7 @@ pub struct ClaudeSessionsIndexEntry {
     #[serde(rename = "gitBranch")]
     pub git_branch: Option<String>,
     #[serde(rename = "projectPath")]
+    #[allow(dead_code)]
     pub project_path: Option<String>,
     #[serde(rename = "isSidechain")]
     pub is_sidechain: Option<bool>,

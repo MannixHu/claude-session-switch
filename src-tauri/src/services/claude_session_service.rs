@@ -25,15 +25,9 @@ impl ClaudeSessionService {
     ) -> Result<Vec<ClaudeSession>, String> {
         let normalized_project_path = Self::normalize_non_empty(project_path, "Project path")?;
 
-        let projects_dir = Self::claude_projects_dir()
-            .ok_or_else(|| "Cannot determine home directory".to_string())?;
-
-        let encoded = Self::encode_project_path(&normalized_project_path);
-        let project_dir = projects_dir.join(&encoded);
-
-        if !project_dir.exists() {
+        let Some(project_dir) = Self::resolve_project_dir(&normalized_project_path)? else {
             return Ok(vec![]);
-        }
+        };
 
         // Try sessions-index.json first
         let index_path = project_dir.join("sessions-index.json");
@@ -57,6 +51,45 @@ impl ClaudeSessionService {
         }
 
         Ok(sessions)
+    }
+
+    fn resolve_project_dir(project_path: &str) -> Result<Option<PathBuf>, String> {
+        let normalized_project_path = Self::normalize_non_empty(project_path, "Project path")?;
+        let projects_dir = Self::claude_projects_dir()
+            .ok_or_else(|| "Cannot determine home directory".to_string())?;
+
+        let encoded = Self::encode_project_path(&normalized_project_path);
+        let exact_match = projects_dir.join(&encoded);
+        if exact_match.exists() {
+            return Ok(Some(exact_match));
+        }
+
+        let entries = fs::read_dir(&projects_dir)
+            .map_err(|e| format!("Failed to read Claude projects directory: {}", e))?;
+
+        for entry in entries.flatten() {
+            let candidate_dir = entry.path();
+            if !candidate_dir.is_dir() {
+                continue;
+            }
+
+            let index_path = candidate_dir.join("sessions-index.json");
+            if !index_path.exists() {
+                continue;
+            }
+
+            let original_path = fs::read_to_string(&index_path)
+                .ok()
+                .and_then(|content| serde_json::from_str::<ClaudeSessionsIndex>(&content).ok())
+                .and_then(|index| index.original_path)
+                .map(|value| value.trim().to_string());
+
+            if original_path.as_deref() == Some(normalized_project_path.as_str()) {
+                return Ok(Some(candidate_dir));
+            }
+        }
+
+        Ok(None)
     }
 
     /// Load sessions from a sessions-index.json file
@@ -96,9 +129,9 @@ impl ClaudeSessionService {
 
                 Some(ClaudeSession {
                     session_id: entry.session_id,
-                    project_path: entry
-                        .project_path
-                        .unwrap_or_else(|| project_path.to_string()),
+                    // Always bind to the currently requested project path.
+                    // `projectPath` in sessions-index.json can be stale and break PTY cwd/resume.
+                    project_path: project_path.to_string(),
                     summary: entry.summary.unwrap_or_default(),
                     first_prompt: entry.first_prompt.unwrap_or_default(),
                     message_count: entry.message_count.unwrap_or(0),
@@ -234,6 +267,10 @@ impl ClaudeSessionService {
             }
         }
 
+        if message_count == 0 {
+            return Err("JSONL file does not contain any conversational messages".to_string());
+        }
+
         Ok(ClaudeSession {
             session_id: session_id.to_string(),
             project_path: project_path.to_string(),
@@ -308,11 +345,8 @@ impl ClaudeSessionService {
         let normalized_session_id = Self::normalize_non_empty(session_id, "Session id")?;
         let normalized_name = Self::normalize_non_empty(session_name, "Session name")?;
 
-        let projects_dir = Self::claude_projects_dir()
-            .ok_or_else(|| "Cannot determine home directory".to_string())?;
-
-        let encoded = Self::encode_project_path(&normalized_project_path);
-        let project_dir = projects_dir.join(&encoded);
+        let project_dir = Self::resolve_project_dir(&normalized_project_path)?
+            .ok_or_else(|| "Claude project directory not found for this project".to_string())?;
         let index_path = project_dir.join("sessions-index.json");
 
         if !index_path.exists() {
@@ -367,11 +401,8 @@ impl ClaudeSessionService {
         let normalized_project_path = Self::normalize_non_empty(project_path, "Project path")?;
         let normalized_session_id = Self::normalize_non_empty(session_id, "Session id")?;
 
-        let projects_dir = Self::claude_projects_dir()
-            .ok_or_else(|| "Cannot determine home directory".to_string())?;
-
-        let encoded = Self::encode_project_path(&normalized_project_path);
-        let project_dir = projects_dir.join(&encoded);
+        let project_dir = Self::resolve_project_dir(&normalized_project_path)?
+            .ok_or_else(|| "Claude project directory not found for this project".to_string())?;
         let jsonl_path = project_dir.join(format!("{}.jsonl", normalized_session_id));
 
         if !jsonl_path.exists() {
@@ -387,9 +418,9 @@ impl ClaudeSessionService {
     /// Decode the directory name back to a path (best effort)
     /// e.g., "-Users-mannix-Project-MeFlow3" -> "/Users/mannix/Project/MeFlow3"
     fn decode_project_path(encoded: &str) -> String {
-        if encoded.starts_with('-') {
+        if let Some(stripped) = encoded.strip_prefix('-') {
             // Replace leading dash with / and subsequent dashes with /
-            format!("/{}", &encoded[1..].replace('-', "/"))
+            format!("/{}", stripped.replace('-', "/"))
         } else {
             encoded.replace('-', "/")
         }
@@ -447,5 +478,149 @@ impl ClaudeSessionService {
             .unwrap_or_default();
 
         path.with_file_name(format!("{}.{}.tmp", file_name, nanos))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ClaudeSessionService;
+    use crate::services::storage_service::storage_test_env_lock;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn unique_temp_home(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "ccsm-claude-session-test-{}-{}",
+            name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|value| value.as_nanos())
+                .unwrap_or_default()
+        ))
+    }
+
+    #[test]
+    fn list_sessions_for_project_falls_back_to_index_original_path_match() {
+        let _guard = storage_test_env_lock().lock().unwrap();
+        let temp_home = unique_temp_home("hyphen-dir");
+        let project_dir =
+            temp_home.join(".claude/projects/-Users-mannix-Project-PowerOffice-core813");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        let session_id = "session-1";
+        fs::write(project_dir.join(format!("{session_id}.jsonl")), "{}\n").unwrap();
+        fs::write(
+            project_dir.join("sessions-index.json"),
+            r#"{
+  "version": 1,
+  "originalPath": "/Users/mannix/Project/PowerOffice_core813",
+  "entries": [
+    {
+      "sessionId": "session-1",
+      "summary": "Recovered session",
+      "messageCount": 3,
+      "created": "2026-03-08T00:00:00Z",
+      "modified": "2026-03-09T00:00:00Z",
+      "projectPath": "/Users/mannix/Project/PowerOffice_core813",
+      "isSidechain": false
+    }
+  ]
+}"#,
+        )
+        .unwrap();
+
+        std::env::set_var("HOME", &temp_home);
+
+        let sessions = ClaudeSessionService::list_sessions_for_project(
+            "/Users/mannix/Project/PowerOffice_core813",
+            None,
+        )
+        .unwrap();
+
+        std::env::remove_var("HOME");
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].session_id, session_id);
+        assert_eq!(sessions[0].summary, "Recovered session");
+
+        let _ = fs::remove_dir_all(temp_home);
+    }
+
+    #[test]
+    fn rename_claude_session_uses_original_path_match() {
+        let _guard = storage_test_env_lock().lock().unwrap();
+        let temp_home = unique_temp_home("rename-hyphen-dir");
+        let project_dir =
+            temp_home.join(".claude/projects/-Users-mannix-Project-PowerOffice-core813");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        let session_id = "session-1";
+        fs::write(project_dir.join(format!("{session_id}.jsonl")), "{}\n").unwrap();
+        let index_path = project_dir.join("sessions-index.json");
+        fs::write(
+            &index_path,
+            r#"{
+  "version": 1,
+  "originalPath": "/Users/mannix/Project/PowerOffice_core813",
+  "entries": [
+    {
+      "sessionId": "session-1",
+      "summary": "Old name",
+      "messageCount": 3,
+      "created": "2026-03-08T00:00:00Z",
+      "modified": "2026-03-09T00:00:00Z",
+      "projectPath": "/Users/mannix/Project/PowerOffice_core813",
+      "isSidechain": false
+    }
+  ]
+}"#,
+        )
+        .unwrap();
+
+        std::env::set_var("HOME", &temp_home);
+
+        ClaudeSessionService::rename_claude_session(
+            "/Users/mannix/Project/PowerOffice_core813",
+            session_id,
+            "New session name",
+        )
+        .unwrap();
+
+        let updated = fs::read_to_string(&index_path).unwrap();
+
+        std::env::remove_var("HOME");
+
+        assert!(updated.contains("\"summary\": \"New session name\""));
+
+        let _ = fs::remove_dir_all(temp_home);
+    }
+
+    #[test]
+    fn list_sessions_for_project_skips_snapshot_only_jsonl_files() {
+        let _guard = storage_test_env_lock().lock().unwrap();
+        let temp_home = unique_temp_home("snapshot-only-jsonl");
+        let project_dir = temp_home.join(".claude/projects/-Users-mannix-Project-MeFlow2");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        let session_id = "74292510-1512-4af8-b836-82392563dd4d";
+        fs::write(
+            project_dir.join(format!("{session_id}.jsonl")),
+            r#"{"type":"file-history-snapshot","messageId":"8389075c-5862-4848-8378-97d701a686f9","snapshot":{"messageId":"8389075c-5862-4848-8378-97d701a686f9","trackedFileBackups":{},"timestamp":"2026-02-26T07:25:07.268Z"},"isSnapshotUpdate":false}
+{"type":"file-history-snapshot","messageId":"a1e16513-87a5-423b-8ed3-234e309045d2","snapshot":{"messageId":"a1e16513-87a5-423b-8ed3-234e309045d2","trackedFileBackups":{"/Users/mannix/.claude/plans/moonlit-mapping-creek.md":{"backupFileName":null,"version":1,"backupTime":"2026-02-26T07:30:00.795Z"}},"timestamp":"2026-02-26T07:25:11.511Z"},"isSnapshotUpdate":false}
+"#,
+        )
+        .unwrap();
+
+        std::env::set_var("HOME", &temp_home);
+
+        let sessions =
+            ClaudeSessionService::list_sessions_for_project("/Users/mannix/Project/MeFlow2", None)
+                .unwrap();
+
+        std::env::remove_var("HOME");
+
+        assert!(sessions.is_empty());
+
+        let _ = fs::remove_dir_all(temp_home);
     }
 }

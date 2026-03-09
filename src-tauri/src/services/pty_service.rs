@@ -36,7 +36,7 @@ impl PtyLaunchConfig {
         }
     }
 
-    fn launch_script(&self, fallback_session_id: &str, _working_dir: &str) -> Option<String> {
+    fn launch_script(&self, fallback_session_id: &str, shell_path: &str) -> Option<String> {
         if self.mode == PtyLaunchMode::Plain {
             return None;
         }
@@ -65,9 +65,14 @@ impl PtyLaunchConfig {
         claude_resume_parts.push(shell_quote(resume_id));
 
         let claude_resume_command = claude_resume_parts.join(" ");
-        let claude_command = format!("{} || {}", claude_resume_command, claude_base_command);
+        let claude_command = if is_fish_shell(shell_path) {
+            // fish does not support `||`, use native `or` chaining.
+            format!("{}; or {}", claude_resume_command, claude_base_command)
+        } else {
+            format!("{} || {}", claude_resume_command, claude_base_command)
+        };
 
-        Some(format!(r#"exec {claude_command}"#))
+        Some(claude_command)
     }
 }
 
@@ -110,7 +115,14 @@ impl PtyManager {
                 .filter(|value| !value.trim().is_empty())
                 .unwrap_or(normalized_session_id);
 
-            validate_claude_resume_target(normalized_working_dir, resume_id)?;
+            if let Err(error) = validate_claude_resume_target(normalized_working_dir, resume_id) {
+                log::warn!(
+                    "Claude resume target validation failed for sid={} cwd={}: {}. Falling back to non-resume launch path.",
+                    normalized_session_id,
+                    normalized_working_dir,
+                    error
+                );
+            }
         }
 
         log::info!(
@@ -138,13 +150,12 @@ impl PtyManager {
             .openpty(size)
             .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
-        let launch_script =
-            launch_config.launch_script(normalized_session_id, normalized_working_dir);
         let shell = std::env::var("SHELL")
             .ok()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| "/bin/zsh".to_string());
+        let launch_script = launch_config.launch_script(normalized_session_id, &shell);
 
         if let Some(script) = launch_script.as_ref() {
             log::debug!(
@@ -156,10 +167,13 @@ impl PtyManager {
 
         let mut cmd = CommandBuilder::new(&shell);
         if let Some(script) = launch_script {
-            cmd.arg("-ilc");
+            cmd.arg("-i");
+            cmd.arg("-l");
+            cmd.arg("-c");
             cmd.arg(script);
         } else {
-            cmd.arg("-il");
+            cmd.arg("-i");
+            cmd.arg("-l");
         }
         cmd.cwd(normalized_working_dir);
 
@@ -178,6 +192,10 @@ impl PtyManager {
         } else {
             cmd.env("COLORTERM", "truecolor");
         }
+
+        // Avoid nested Claude Code detection inside embedded terminals.
+        // Claude CLI blocks startup when CLAUDECODE is "1".
+        cmd.env("CLAUDECODE", "0");
 
         let inherited_path = std::env::var("PATH").unwrap_or_default();
         let runtime_path = build_runtime_path(&inherited_path);
@@ -216,7 +234,11 @@ impl PtyManager {
         };
 
         sessions.insert(normalized_session_id.to_string(), session);
-        log::info!("PTY created sid={} cwd={}", normalized_session_id, normalized_working_dir);
+        log::info!(
+            "PTY created sid={} cwd={}",
+            normalized_session_id,
+            normalized_working_dir
+        );
         Ok(true)
     }
 
@@ -315,7 +337,11 @@ fn emit_pty_output(app_handle: &tauri::AppHandle, session_id: &str, data: &str) 
     };
 
     if let Err(error) = app_handle.emit("pty-output", payload) {
-        log::warn!("Failed emitting global pty-output for {}: {}", session_id, error);
+        log::warn!(
+            "Failed emitting global pty-output for {}: {}",
+            session_id,
+            error
+        );
         return false;
     }
 
@@ -405,7 +431,10 @@ fn reader_thread(
                                 logged_chunk_count += 1;
 
                                 if !emit_pty_output(&app_handle, &session_id, valid_text) {
-                                    log::debug!("PTY output emit failed for session {}", session_id);
+                                    log::debug!(
+                                        "PTY output emit failed for session {}",
+                                        session_id
+                                    );
                                     break 'reader_loop;
                                 }
 
@@ -483,13 +512,7 @@ fn reader_thread(
 fn log_preview(data: &str) -> String {
     let compact = data
         .chars()
-        .map(|ch| {
-            if ch.is_control() {
-                ' '
-            } else {
-                ch
-            }
-        })
+        .map(|ch| if ch.is_control() { ' ' } else { ch })
         .collect::<String>();
 
     let trimmed = compact.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -617,4 +640,12 @@ fn shell_quote(value: &str) -> String {
     }
 
     format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn is_fish_shell(shell_path: &str) -> bool {
+    Path::new(shell_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.eq_ignore_ascii_case("fish"))
+        .unwrap_or(false)
 }

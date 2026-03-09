@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback, useMemo } from "react";
 import { ShellType } from "../hooks/useBackend";
 import "./SessionEditorSheet.css";
 
@@ -28,7 +28,16 @@ export function SessionEditorSheet({
     envVars: "" as string,
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const resetForm = useCallback(() => {
+    setFormData({
+      name: "",
+      shell: ShellType.Bash,
+      workDir: "",
+      envVars: "",
+    });
+  }, []);
+
+  const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) {
       alert("Please fill in session name");
@@ -49,16 +58,9 @@ export function SessionEditorSheet({
 
     onSubmit(formData.name, formData.shell, formData.workDir, envVars);
     resetForm();
-  };
+  }, [formData, onSubmit, resetForm]);
 
-  const resetForm = () => {
-    setFormData({
-      name: "",
-      shell: ShellType.Bash,
-      workDir: "",
-      envVars: "",
-    });
-  };
+  const shellOptions = useMemo(() => Object.values(ShellType), []);
 
   return (
     <>
@@ -105,7 +107,7 @@ export function SessionEditorSheet({
                   }
                   disabled={loading}
                 >
-                  {Object.values(ShellType).map((shell) => (
+                  {shellOptions.map((shell) => (
                     <option key={shell} value={shell}>
                       {shell.toUpperCase()}
                     </option>

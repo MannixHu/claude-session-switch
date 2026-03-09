@@ -1,6 +1,6 @@
 use crate::models::{Session, ShellType};
 use crate::services::storage_service::StorageService;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 pub struct SessionService {
@@ -187,6 +187,23 @@ impl SessionService {
         }
     }
 
+    pub fn delete_sessions_for_project(&self, project_id: &str) -> Result<(), String> {
+        let normalized_project_id = project_id.trim();
+        if normalized_project_id.is_empty() {
+            return Err("Project id cannot be empty".to_string());
+        }
+
+        let mut sessions = self.sessions.lock().map_err(|e| e.to_string())?;
+        let original_len = sessions.len();
+        sessions.retain(|session| session.project_id != normalized_project_id);
+
+        if sessions.len() != original_len {
+            Self::persist_sessions(&sessions)?;
+        }
+
+        Ok(())
+    }
+
     fn persist_sessions(sessions: &[Session]) -> Result<(), String> {
         StorageService::write(&StorageService::sessions_file(), &sessions)
             .map_err(|e| format!("Failed to save sessions: {}", e))
@@ -236,14 +253,121 @@ impl SessionService {
                 session.shell = normalized_shell;
                 changed = true;
             }
+
+            let normalized_environment =
+                Self::normalize_environment_variables(&session.environment_variables);
+            if normalized_environment != session.environment_variables {
+                session.environment_variables = normalized_environment;
+                changed = true;
+            }
+
+            let normalized_history = Self::normalize_command_history(&session.command_history);
+            if normalized_history != session.command_history {
+                session.command_history = normalized_history;
+                changed = true;
+            }
         }
 
         changed
+    }
+
+    fn normalize_environment_variables(
+        environment_variables: &HashMap<String, String>,
+    ) -> HashMap<String, String> {
+        environment_variables
+            .iter()
+            .filter_map(|(key, value)| {
+                let normalized_key = key.trim();
+                let normalized_value = value.trim();
+
+                if normalized_key.is_empty() || normalized_value.is_empty() {
+                    return None;
+                }
+
+                Some((normalized_key.to_string(), normalized_value.to_string()))
+            })
+            .collect()
+    }
+
+    fn normalize_command_history(command_history: &[String]) -> Vec<String> {
+        command_history
+            .iter()
+            .filter_map(|command| {
+                let normalized = command.trim();
+                if normalized.is_empty() {
+                    return None;
+                }
+
+                Some(normalized.to_string())
+            })
+            .collect()
     }
 }
 
 impl Default for SessionService {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SessionService;
+    use crate::models::Session;
+    use std::collections::HashMap;
+
+    fn session(
+        id: &str,
+        project_id: &str,
+        name: &str,
+        shell: &str,
+        environment_variables: HashMap<String, String>,
+        command_history: &[&str],
+    ) -> Session {
+        Session {
+            id: id.to_string(),
+            project_id: project_id.to_string(),
+            name: name.to_string(),
+            shell: shell.to_string(),
+            environment_variables,
+            command_history: command_history
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect(),
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+        }
+    }
+
+    #[test]
+    fn normalize_sessions_trims_runtime_metadata() {
+        let mut environment_variables = HashMap::new();
+        environment_variables.insert(" PATH ".to_string(), " /usr/bin ".to_string());
+        environment_variables.insert("   ".to_string(), "ignored".to_string());
+        environment_variables.insert(" EMPTY ".to_string(), "   ".to_string());
+
+        let mut sessions = vec![session(
+            " session-1 ",
+            " project-1 ",
+            " Main Session ",
+            " ZSH ",
+            environment_variables,
+            &[" git status ", "   ", "\tnpm test\t"],
+        )];
+
+        let changed = SessionService::normalize_sessions(&mut sessions);
+
+        assert!(changed);
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, "session-1");
+        assert_eq!(sessions[0].project_id, "project-1");
+        assert_eq!(sessions[0].name, "Main Session");
+        assert_eq!(sessions[0].shell, "zsh");
+        assert_eq!(sessions[0].command_history, vec!["git status", "npm test"]);
+        assert_eq!(sessions[0].environment_variables.len(), 1);
+        assert_eq!(
+            sessions[0].environment_variables.get("PATH"),
+            Some(&"/usr/bin".to_string())
+        );
     }
 }

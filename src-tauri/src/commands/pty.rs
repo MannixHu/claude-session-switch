@@ -8,6 +8,7 @@ struct PtyCreateFailedPayload {
     error: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command(rename_all = "snake_case")]
 pub fn create_pty(
     session_id: String,

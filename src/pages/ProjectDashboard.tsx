@@ -11,6 +11,19 @@ import {
   createTranslator,
   resolveAppLanguage,
 } from "../lib/i18n";
+import {
+  buildSessionAliasKey,
+  getDefaultSessionLabel,
+  getProjectsWithOpenPlainTerminals,
+  getSessionAliasForItem,
+  getVisibleClaudeSessions,
+  hideClaudeSession,
+  haveClaudeSessionsChanged,
+  removeHiddenClaudeSession,
+  removeSessionAliasEntries,
+  updateSessionAliasesForDraft,
+} from "../lib/claudeSessions";
+import { getClaudeAutoResponseForOutput } from "../lib/claudeTerminalAutomation";
 import "./ProjectDashboard.css";
 
 type ThemeMode = "dark" | "light";
@@ -109,6 +122,7 @@ type AppSettingsFile = {
   };
   sessions: {
     aliases: Record<string, string>;
+    hidden: Record<string, boolean>;
     restore_last_opened_session: boolean;
     last_opened: LastOpenedSessionRef | null;
   };
@@ -128,7 +142,11 @@ const DEFAULT_CLAUDE_CUSTOM_ARGS = "--dangerously-skip-permissions";
 const DEFAULT_EXTERNAL_TERMINAL = "Terminal";
 const DEFAULT_EXTERNAL_EDITOR = "VSCode";
 const DEFAULT_VISIBLE_SESSIONS = 3;
+const PLAIN_SESSION_DISCOVERY_POLL_MS = 1500;
 const SETTINGS_PERSIST_DEBOUNCE_MS = 480;
+const INVALID_CLAUDE_SESSION_OUTPUT_PATTERN = /No conversation found with session ID:/i;
+const INVALID_SESSION_OUTPUT_BUFFER_LIMIT = 600;
+const WORKSPACE_TRUST_OUTPUT_BUFFER_LIMIT = 2400;
 const DEFAULT_TERMINAL_FONT_FAMILY =
   '"JetBrains Mono", "SF Pro Text", "SF Mono", "SFMono-Regular", "Consolas", "Menlo", "Monaco", "Courier New", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK JP", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "WenQuanYi Micro Hei", "Noto Color Emoji", "Segoe UI", "Ubuntu Mono", monospace';
 const TERMINAL_SCROLLBAR_WIDTH_OPTIONS = [4, 5, 6, 8] as const;
@@ -139,6 +157,10 @@ const tryGetCurrentWindow = () => {
   } catch {
     return null;
   }
+};
+
+const stripAnsiSequences = (value: string): string => {
+  return value.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "");
 };
 
 const DEFAULT_LAYOUT_SETTINGS = {
@@ -216,7 +238,7 @@ const DEFAULT_THEME_PALETTES: ThemePalettes = {
   },
 };
 
-const THEME_PALETTE_KEYS: (keyof ThemePalette)[] = [
+const THEME_PALETTE_STRING_KEYS = [
   "app_bg",
   "panel_bg",
   "border_color",
@@ -241,7 +263,7 @@ const THEME_PALETTE_KEYS: (keyof ThemePalette)[] = [
   "terminal_scrollbar",
   "terminal_scrollbar_hover",
   "terminal_font_family",
-];
+] as const;
 
 const normalizeCustomClaudeArgs = (raw: string): string[] => {
   const tokens = raw.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? [];
@@ -356,60 +378,6 @@ const normalizeLastOpenedSession = (value: unknown): LastOpenedSessionRef | null
   };
 };
 
-const normalizeAliasProjectPath = (projectPath: string): string => {
-  return projectPath
-    .replace(/\\/g, "/")
-    .replace(/\/+$/, "")
-    .replace(/\s+/g, " ")
-    .trim();
-};
-
-const buildSessionAliasKey = (projectPath: string, sessionId: string): string => {
-  const normalizedProjectPath = normalizeAliasProjectPath(projectPath);
-  const normalizedSessionId = sessionId.replace(/\s+/g, " ").trim();
-
-  return `${encodeURIComponent(normalizedProjectPath)}::${encodeURIComponent(normalizedSessionId)}`;
-};
-
-const getSessionAliasForItem = (
-  aliases: Record<string, string>,
-  session: Pick<ClaudeSession, "project_path" | "session_id">
-): string | null => {
-  const namespacedKey = buildSessionAliasKey(session.project_path, session.session_id);
-  const namespacedAlias = aliases[namespacedKey];
-  if (typeof namespacedAlias === "string" && namespacedAlias.trim().length > 0) {
-    return namespacedAlias;
-  }
-
-  const legacyAlias = aliases[session.session_id];
-  if (typeof legacyAlias === "string" && legacyAlias.trim().length > 0) {
-    return legacyAlias;
-  }
-
-  return null;
-};
-
-const removeSessionAliasEntries = (
-  aliases: Record<string, string>,
-  session: Pick<ClaudeSession, "project_path" | "session_id">
-): Record<string, string> => {
-  let changed = false;
-  const next = { ...aliases };
-
-  const namespacedKey = buildSessionAliasKey(session.project_path, session.session_id);
-  if (namespacedKey in next) {
-    delete next[namespacedKey];
-    changed = true;
-  }
-
-  if (session.session_id in next) {
-    delete next[session.session_id];
-    changed = true;
-  }
-
-  return changed ? next : aliases;
-};
-
 const normalizeThemePalette = (value: unknown, fallback: ThemePalette): ThemePalette => {
   if (!value || typeof value !== "object") {
     return { ...fallback };
@@ -418,7 +386,7 @@ const normalizeThemePalette = (value: unknown, fallback: ThemePalette): ThemePal
   const source = value as Record<string, unknown>;
   const next = { ...fallback };
 
-  for (const key of THEME_PALETTE_KEYS) {
+  for (const key of THEME_PALETTE_STRING_KEYS) {
     const current = source[key];
     if (typeof current === "string" && current.trim().length > 0) {
       next[key] = current.trim();
@@ -553,7 +521,6 @@ export function ProjectDashboard() {
     getAvailableEditors,
     openProjectInTerminal,
     openProjectInEditor,
-    renameClaudeSession,
     deleteClaudeSession,
     clearError,
     error,
@@ -577,6 +544,7 @@ export function ProjectDashboard() {
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
   const [sessionAliases, setSessionAliases] = useState<Record<string, string>>({});
+  const [hiddenClaudeSessions, setHiddenClaudeSessions] = useState<Record<string, boolean>>({});
   const [restoreLastOpenedSession, setRestoreLastOpenedSession] = useState(true);
   const [lastOpenedSession, setLastOpenedSession] = useState<LastOpenedSessionRef | null>(null);
   const [defaultExternalTerminal, setDefaultExternalTerminal] = useState(
@@ -616,6 +584,9 @@ export function ProjectDashboard() {
   const sidebarResizeRafRef = useRef<number | null>(null);
   const pendingSidebarWidthRef = useRef<number | null>(null);
   const windowResizeRafRef = useRef<number | null>(null);
+  const invalidSessionOutputBufferRef = useRef<Map<string, string>>(new Map());
+  const workspaceTrustOutputBufferRef = useRef<Map<string, string>>(new Map());
+  const autoConfirmedTrustPromptRef = useRef<Set<string>>(new Set());
 
   const t = useMemo(() => createTranslator(appLanguage), [appLanguage]);
 
@@ -702,6 +673,10 @@ export function ProjectDashboard() {
         return;
       }
 
+      invalidSessionOutputBufferRef.current.delete(normalizedSessionId);
+      workspaceTrustOutputBufferRef.current.delete(normalizedSessionId);
+      autoConfirmedTrustPromptRef.current.delete(normalizedSessionId);
+
       setOpenTerminalSessionIds((previous) => {
         if (!previous.has(normalizedSessionId)) {
           return previous;
@@ -726,9 +701,6 @@ export function ProjectDashboard() {
         unlistenPtyCreateFailed = await listen<PtyCreateFailedPayload>(
           "pty-create-failed",
           (event) => {
-            const sessionId = event.payload?.session_id ?? "";
-            cleanupTerminalSessionState(sessionId);
-
             const message =
               typeof event.payload?.error === "string"
                 ? event.payload.error.trim()
@@ -900,26 +872,27 @@ export function ProjectDashboard() {
     const next: Record<string, ClaudeSession[]> = {};
 
     for (const project of projects) {
-      next[project.id] = (claudeSessionsByProject[project.id] || []).filter(
-        (session) => session.first_prompt || session.summary
+      next[project.id] = getVisibleClaudeSessions(
+        claudeSessionsByProject[project.id] || [],
+        hiddenClaudeSessions
       );
     }
 
     return next;
-  }, [projects, claudeSessionsByProject]);
+  }, [projects, claudeSessionsByProject, hiddenClaudeSessions]);
 
   const sessionLookupMap = useMemo(() => {
     const lookup = new Map<string, { project: Project; session: ClaudeSession }>();
 
     for (const project of projects) {
-      const sessions = claudeSessionsByProject[project.id] || [];
+      const sessions = filteredSessionsByProject[project.id] || [];
       for (const session of sessions) {
         lookup.set(session.session_id, { project, session });
       }
     }
 
     return lookup;
-  }, [projects, claudeSessionsByProject]);
+  }, [filteredSessionsByProject, projects]);
 
   useEffect(() => {
     if (!selectedProject || !selectedSessionId) {
@@ -961,14 +934,30 @@ export function ProjectDashboard() {
       }
 
       const matched = sessionLookupMap.get(terminalId);
-      const sessionProjectPath = matched?.session.project_path?.trim();
-      if (sessionProjectPath) {
-        return sessionProjectPath;
-      }
-
       return matched?.project.path || selectedProject?.path || "";
     },
     [projectById, selectedProject?.path, sessionLookupMap]
+  );
+
+  const refreshClaudeSessionsForProject = useCallback(
+    async (projectId: string, projectPath: string) => {
+      const sessions = await listClaudeSessions(projectPath);
+
+      setClaudeSessionsByProject((previous) => {
+        const currentSessions = previous[projectId] || [];
+        if (!haveClaudeSessionsChanged(currentSessions, sessions)) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          [projectId]: sessions,
+        };
+      });
+
+      return sessions;
+    },
+    [listClaudeSessions]
   );
 
   const loadProjectsAndSessions = async () => {
@@ -987,11 +976,8 @@ export function ProjectDashboard() {
         const chunkEntries = await Promise.all(
           chunk.map(async (project) => {
             try {
-              const sessions = await invoke<ClaudeSession[]>("list_claude_sessions", {
-                project_path: project.path,
-                limit: null,
-              });
-              return [project.id, sessions || [] as ClaudeSession[]] as const;
+              const sessions = await listClaudeSessions(project.path);
+              return [project.id, sessions] as const;
             } catch {
               return [project.id, [] as ClaudeSession[]] as const;
             }
@@ -1025,6 +1011,49 @@ export function ProjectDashboard() {
   useEffect(() => {
     void loadProjectsAndSessions();
   }, []);
+
+  useEffect(() => {
+    if (!projectsReady) {
+      return;
+    }
+
+    const trackedProjects = getProjectsWithOpenPlainTerminals(projects, openTerminalSessionIds);
+    if (trackedProjects.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: number | null = null;
+
+    const refreshLoop = async () => {
+      await Promise.all(
+        trackedProjects.map(async (project) => {
+          try {
+            await refreshClaudeSessionsForProject(project.id, project.path);
+          } catch (error) {
+            if (!cancelled) {
+              console.warn("Failed to refresh Claude sessions for project", project.path, error);
+            }
+          }
+        })
+      );
+
+      if (!cancelled) {
+        timeoutId = window.setTimeout(() => {
+          void refreshLoop();
+        }, PLAIN_SESSION_DISCOVERY_POLL_MS);
+      }
+    };
+
+    void refreshLoop();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [openTerminalSessionIds, projects, projectsReady, refreshClaudeSessionsForProject]);
 
   useEffect(() => {
     if (projects.length === 0) {
@@ -1097,6 +1126,7 @@ export function ProjectDashboard() {
         setShowAllSessions(normalizeBooleanRecord(settings.ui?.project_tree?.show_all_sessions));
         setProjectOrder(normalizeStringArray(settings.ui?.project_tree?.project_order));
         setSessionAliases(normalizeStringRecord(settings.sessions?.aliases));
+        setHiddenClaudeSessions(normalizeBooleanRecord(settings.sessions?.hidden));
         setRestoreLastOpenedSession(settings.sessions?.restore_last_opened_session !== false);
         setLastOpenedSession(normalizeLastOpenedSession(settings.sessions?.last_opened));
 
@@ -1315,6 +1345,7 @@ export function ProjectDashboard() {
       },
       sessions: {
         aliases: sessionAliases,
+        hidden: hiddenClaudeSessions,
         restore_last_opened_session: restoreLastOpenedSession,
         last_opened: lastOpenedSession,
       },
@@ -1356,6 +1387,7 @@ export function ProjectDashboard() {
     showAllSessions,
     projectOrder,
     sessionAliases,
+    hiddenClaudeSessions,
     restoreLastOpenedSession,
     lastOpenedSession,
   ]);
@@ -1721,12 +1753,6 @@ export function ProjectDashboard() {
     document.addEventListener("mouseup", handleMouseUp);
   };
 
-  const getDefaultSessionLabel = (session: ClaudeSession): string => {
-    if (session.summary) return session.summary;
-    if (session.first_prompt) return session.first_prompt;
-    return session.session_id.slice(0, 8);
-  };
-
   const formatSessionLabel = (session: ClaudeSession): string => {
     return getSessionAlias(session) || getDefaultSessionLabel(session);
   };
@@ -1809,6 +1835,12 @@ export function ProjectDashboard() {
       }));
       setSessionAliases((previous) => {
         return removeSessionAliasEntries(previous, {
+          project_path: projectPath,
+          session_id: sessionId,
+        });
+      });
+      setHiddenClaudeSessions((previous) => {
+        return removeHiddenClaudeSession(previous, {
           project_path: projectPath,
           session_id: sessionId,
         });
@@ -1964,6 +1996,13 @@ export function ProjectDashboard() {
         }
         return next;
       });
+      setHiddenClaudeSessions((previous) => {
+        let next = previous;
+        for (const session of claudeSessionsByProject[project.id] || []) {
+          next = removeHiddenClaudeSession(next, session);
+        }
+        return next;
+      });
 
       setStatusMessage(t("status_project_removed", { name: project.name }));
     } catch (deleteError) {
@@ -1990,69 +2029,20 @@ export function ProjectDashboard() {
     setSessionNameDraft("");
   };
 
-  const saveEditingSessionLabel = async (session: ClaudeSession) => {
-    const normalized = sessionNameDraft.replace(/\s+/g, " ").trim();
-    const currentLabel = formatSessionLabel(session);
+  const saveEditingSessionLabel = (session: ClaudeSession) => {
+    const aliasUpdate = updateSessionAliasesForDraft(sessionAliases, session, sessionNameDraft);
 
-    if (!normalized || normalized === currentLabel) {
-      setEditingSessionId(null);
-      setSessionNameDraft("");
-      return;
+    if (aliasUpdate.status !== "unchanged") {
+      setSessionAliases(aliasUpdate.aliases);
+      clearError();
     }
 
-    try {
-      await renameClaudeSession(session.project_path, session.session_id, normalized);
+    if (aliasUpdate.status === "updated" && aliasUpdate.alias) {
+      setStatusMessage(t("status_session_alias_saved", { name: aliasUpdate.alias }));
+    }
 
-      const matchedProjectId = projectByPath.get(session.project_path)?.id;
-
-      if (matchedProjectId) {
-        setClaudeSessionsByProject((previous) => {
-          const currentSessions = previous[matchedProjectId];
-          if (!currentSessions) {
-            return previous;
-          }
-
-          const updated = currentSessions.map((item) =>
-            item.session_id === session.session_id
-              ? {
-                  ...item,
-                  summary: normalized,
-                }
-              : item
-          );
-
-          return {
-            ...previous,
-            [matchedProjectId]: updated,
-          };
-        });
-      }
-
-      setSessionAliases((previous) => {
-        return removeSessionAliasEntries(previous, session);
-      });
-
-      setStatusMessage(t("status_session_renamed", { name: normalized }));
-    } catch (renameError) {
-      const defaultLabel = getDefaultSessionLabel(session);
-
-      setSessionAliases((previous) => {
-        const next = { ...previous };
-        const namespacedKey = buildSessionAliasKey(session.project_path, session.session_id);
-
-        if (normalized === defaultLabel) {
-          delete next[namespacedKey];
-          delete next[session.session_id];
-        } else {
-          next[namespacedKey] = normalized;
-          delete next[session.session_id];
-        }
-        return next;
-      });
-
-      clearError();
-      setStatusMessage(t("status_session_rename_fallback"));
-      console.warn("Native session rename failed, fallback to local alias", renameError);
+    if (aliasUpdate.status === "cleared") {
+      setStatusMessage(t("status_session_alias_cleared"));
     }
 
     setEditingSessionId(null);
@@ -2242,6 +2232,80 @@ export function ProjectDashboard() {
 
     return formatSessionLabel(selectedSessionContext.session);
   }, [selectedSessionContext, sessionAliases]);
+
+  const handleTerminalOutput = useCallback(
+    (sessionId: string, data: string) => {
+      if (!data) {
+        return;
+      }
+
+      if (!autoConfirmedTrustPromptRef.current.has(sessionId)) {
+        const previousTrustOutput = workspaceTrustOutputBufferRef.current.get(sessionId) ?? "";
+        const combinedTrustOutput = `${previousTrustOutput}${data}`.slice(
+          -WORKSPACE_TRUST_OUTPUT_BUFFER_LIMIT
+        );
+        workspaceTrustOutputBufferRef.current.set(sessionId, combinedTrustOutput);
+
+        const autoResponse = getClaudeAutoResponseForOutput(combinedTrustOutput);
+        if (autoResponse) {
+          autoConfirmedTrustPromptRef.current.add(sessionId);
+          workspaceTrustOutputBufferRef.current.delete(sessionId);
+          void writePty(sessionId, autoResponse).catch(() => {});
+        }
+      }
+
+      if (sessionId.startsWith("__plain__")) {
+        return;
+      }
+
+      const matchedSession = sessionLookupMap.get(sessionId);
+      if (!matchedSession) {
+        return;
+      }
+
+      const sanitizedChunk = stripAnsiSequences(data);
+      if (!sanitizedChunk) {
+        return;
+      }
+
+      const previousOutput = invalidSessionOutputBufferRef.current.get(sessionId) ?? "";
+      const combinedOutput = `${previousOutput}${sanitizedChunk}`.slice(
+        -INVALID_SESSION_OUTPUT_BUFFER_LIMIT
+      );
+      invalidSessionOutputBufferRef.current.set(sessionId, combinedOutput);
+
+      if (!INVALID_CLAUDE_SESSION_OUTPUT_PATTERN.test(combinedOutput)) {
+        return;
+      }
+
+      invalidSessionOutputBufferRef.current.delete(sessionId);
+
+      setHiddenClaudeSessions((previous) => {
+        return hideClaudeSession(previous, matchedSession.session);
+      });
+      setLastOpenedSession((previous) => {
+        if (previous?.session_id === sessionId) {
+          return null;
+        }
+
+        return previous;
+      });
+      setStatusMessage(t("status_session_hidden_invalid"));
+      setSelectedSessionId((previous) => (previous === sessionId ? null : previous));
+      setActiveTerminalId((previous) => (previous === sessionId ? null : previous));
+      setOpenTerminalSessionIds((previous) => {
+        if (!previous.has(sessionId)) {
+          return previous;
+        }
+
+        const next = new Set(previous);
+        next.delete(sessionId);
+        return next;
+      });
+      void closePty(sessionId).catch(() => {});
+    },
+    [closePty, sessionLookupMap, t, writePty]
+  );
 
   const projectTreeView = useMemo(() => {
     return projects.map((project) => {
@@ -2764,6 +2828,7 @@ export function ProjectDashboard() {
                 isDark={themeMode === "dark"}
                 themePalette={terminalThemePalette}
                 claudeArgs={customClaudeArgs}
+                onOutput={handleTerminalOutput}
               />
             ))}
             {openTerminalSessionIds.size === 0 && (

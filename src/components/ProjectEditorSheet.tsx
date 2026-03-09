@@ -20,6 +20,31 @@ const COLORS = [
   "#6366F1",
 ];
 
+interface ColorOptionProps {
+  color: string;
+  isSelected: boolean;
+  disabled: boolean;
+  onSelect: (color: string) => void;
+}
+
+const ColorOption = React.memo(function ColorOption({
+  color,
+  isSelected,
+  disabled,
+  onSelect,
+}: ColorOptionProps) {
+  return (
+    <div
+      className={`color-option ${isSelected ? "selected" : ""}`}
+      style={{ backgroundColor: color }}
+      onClick={() => !disabled && onSelect(color)}
+      title={color}
+    >
+      {isSelected && <span>✓</span>}
+    </div>
+  );
+});
+
 export function ProjectEditorSheet({
   isOpen,
   onClose,
@@ -34,7 +59,7 @@ export function ProjectEditorSheet({
     color: COLORS[0],
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim() || !formData.path.trim()) {
       alert("Please fill in all required fields");
@@ -47,7 +72,7 @@ export function ProjectEditorSheet({
       description: "",
       color: COLORS[0],
     });
-  };
+  }, [formData, onSubmit]);
 
   const handleBrowseFolder = useCallback(async () => {
     if (loading) {
@@ -75,6 +100,10 @@ export function ProjectEditorSheet({
       setPickerError("Failed to open native folder picker. Please try again.");
     }
   }, [loading]);
+
+  const handleColorSelect = useCallback((color: string) => {
+    setFormData((prev) => ({ ...prev, color }));
+  }, []);
 
   useEffect(() => {
     if (!isOpen || loading) {
@@ -159,20 +188,13 @@ export function ProjectEditorSheet({
                 <label>Project Color</label>
                 <div className="color-picker">
                   {COLORS.map((color) => (
-                    <div
+                    <ColorOption
                       key={color}
-                      className={`color-option ${
-                        formData.color === color ? "selected" : ""
-                      }`}
-                      style={{ backgroundColor: color }}
-                      onClick={() =>
-                        !loading &&
-                        setFormData((prev) => ({ ...prev, color }))
-                      }
-                      title={color}
-                    >
-                      {formData.color === color && <span>✓</span>}
-                    </div>
+                      color={color}
+                      isSelected={formData.color === color}
+                      disabled={loading}
+                      onSelect={handleColorSelect}
+                    />
                   ))}
                 </div>
               </div>
