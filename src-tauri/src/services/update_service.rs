@@ -1,5 +1,5 @@
 use reqwest::blocking::Client;
-use reqwest::header::{ACCEPT, HeaderMap, HeaderValue, USER_AGENT};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -43,10 +43,7 @@ pub struct UpdateService;
 impl UpdateService {
     fn build_http_client() -> Result<Client, String> {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            ACCEPT,
-            HeaderValue::from_static(GITHUB_API_ACCEPT),
-        );
+        headers.insert(ACCEPT, HeaderValue::from_static(GITHUB_API_ACCEPT));
         headers.insert(USER_AGENT, HeaderValue::from_static(GITHUB_USER_AGENT));
 
         Client::builder()
@@ -129,8 +126,9 @@ impl UpdateService {
         let release = Self::parse_release(release_json)?;
         let normalized_latest = Self::normalize_version_tag(&release.tag_name)?;
 
-        let current = Version::parse(&normalized_current)
-            .map_err(|error| format!("Invalid current version {}: {}", normalized_current, error))?;
+        let current = Version::parse(&normalized_current).map_err(|error| {
+            format!("Invalid current version {}: {}", normalized_current, error)
+        })?;
         let latest = Version::parse(&normalized_latest)
             .map_err(|error| format!("Invalid latest version {}: {}", normalized_latest, error))?;
 
@@ -148,8 +146,10 @@ impl UpdateService {
             });
         }
 
-        let expected_asset_name =
-            format!("ClaudeSessionSwitch_{}_{}.dmg", normalized_latest, target_arch);
+        let expected_asset_name = format!(
+            "ClaudeSessionSwitch_{}_{}.dmg",
+            normalized_latest, target_arch
+        );
 
         let asset = release
             .assets
@@ -203,8 +203,9 @@ impl UpdateService {
         let normalized_current = Self::normalize_version_tag(current_version)?;
         let normalized_latest = Self::normalize_version_tag(&release.tag_name)?;
 
-        let current = Version::parse(&normalized_current)
-            .map_err(|error| format!("Invalid current version {}: {}", normalized_current, error))?;
+        let current = Version::parse(&normalized_current).map_err(|error| {
+            format!("Invalid current version {}: {}", normalized_current, error)
+        })?;
         let latest = Version::parse(&normalized_latest)
             .map_err(|error| format!("Invalid latest version {}: {}", normalized_latest, error))?;
         let target_arch = Self::release_arch_suffix(arch)?.to_string();
@@ -240,15 +241,24 @@ impl UpdateService {
             return Err("Expected checksum cannot be empty".to_string());
         }
 
-        let mut file = fs::File::open(path)
-            .map_err(|error| format!("Failed to open downloaded file {}: {}", path.display(), error))?;
+        let mut file = fs::File::open(path).map_err(|error| {
+            format!(
+                "Failed to open downloaded file {}: {}",
+                path.display(),
+                error
+            )
+        })?;
         let mut hasher = Sha256::new();
         let mut buffer = [0_u8; 16 * 1024];
 
         loop {
-            let bytes_read = file
-                .read(&mut buffer)
-                .map_err(|error| format!("Failed to read downloaded file {}: {}", path.display(), error))?;
+            let bytes_read = file.read(&mut buffer).map_err(|error| {
+                format!(
+                    "Failed to read downloaded file {}: {}",
+                    path.display(),
+                    error
+                )
+            })?;
             if bytes_read == 0 {
                 break;
             }
@@ -330,12 +340,13 @@ impl UpdateService {
     pub fn open_downloaded_installer(path: &Path) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         {
-            Command::new("open")
-                .arg(path)
-                .spawn()
-                .map_err(|error| {
-                    format!("Failed to open downloaded installer {}: {}", path.display(), error)
-                })?;
+            Command::new("open").arg(path).spawn().map_err(|error| {
+                format!(
+                    "Failed to open downloaded installer {}: {}",
+                    path.display(),
+                    error
+                )
+            })?;
             return Ok(());
         }
 
@@ -375,8 +386,7 @@ mod tests {
         let checksums = "abc123  ClaudeSessionSwitch_0.1.17_arm64.dmg\nfff999  ClaudeSessionSwitch_0.1.17_x64.dmg\n";
 
         let result =
-            UpdateService::resolve_release("0.1.16", "aarch64", release_json, checksums)
-                .unwrap();
+            UpdateService::resolve_release("0.1.16", "aarch64", release_json, checksums).unwrap();
 
         assert!(result.update_available);
         assert_eq!(result.current_version, "0.1.16");
@@ -392,8 +402,7 @@ mod tests {
           "assets": []
         }"#;
 
-        let result = UpdateService::resolve_release("0.1.16", "aarch64", release_json, "")
-            .unwrap();
+        let result = UpdateService::resolve_release("0.1.16", "aarch64", release_json, "").unwrap();
 
         assert!(!result.update_available);
         assert_eq!(result.latest_version, "0.1.16");
