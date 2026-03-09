@@ -68,6 +68,22 @@ export interface ClaudeSession {
   is_sidechain: boolean;
 }
 
+export interface UpdateCheckResult {
+  current_version: string;
+  latest_version: string;
+  update_available: boolean;
+  target_arch: string;
+  asset_name: string;
+  download_url: string;
+  expected_sha256: string;
+}
+
+export interface DownloadedUpdateResult {
+  version: string;
+  asset_name: string;
+  downloaded_path: string;
+}
+
 export interface CreateProjectInput {
   name: string;
   path: string;
@@ -627,6 +643,31 @@ function useCreateBackend() {
     [runWithState]
   );
 
+  const checkForUpdates = useCallback(async (): Promise<UpdateCheckResult> => {
+    return runWithState(() => invoke<UpdateCheckResult>("check_for_updates"), false);
+  }, [runWithState]);
+
+  const downloadAndOpenUpdate = useCallback(
+    async (input: {
+      download_url: string;
+      asset_name: string;
+      expected_sha256: string;
+      version: string;
+    }): Promise<DownloadedUpdateResult> => {
+      return runWithState(
+        () =>
+          invoke<DownloadedUpdateResult>("download_and_open_update", {
+            download_url: input.download_url,
+            asset_name: input.asset_name,
+            expected_sha256: input.expected_sha256,
+            version: input.version,
+          }),
+        false
+      );
+    },
+    [runWithState]
+  );
+
   return {
     // State
     loading: state.pendingRequests > 0,
@@ -671,6 +712,8 @@ function useCreateBackend() {
     listClaudeProjects,
     renameClaudeSession,
     deleteClaudeSession,
+    checkForUpdates,
+    downloadAndOpenUpdate,
   };
 }
 

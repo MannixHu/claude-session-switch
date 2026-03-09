@@ -26,9 +26,13 @@ const MENU_OPEN_CONFIG_FILE_ID: &str = "open_config_file";
 #[cfg(target_os = "macos")]
 const MENU_RELOAD_CONFIG_ID: &str = "reload_config";
 #[cfg(target_os = "macos")]
+const MENU_CHECK_FOR_UPDATES_ID: &str = "check_for_updates";
+#[cfg(target_os = "macos")]
 const EVENT_OPEN_SETTINGS: &str = "open-settings";
 #[cfg(target_os = "macos")]
 const EVENT_RELOAD_SETTINGS: &str = "reload-settings";
+#[cfg(target_os = "macos")]
+const EVENT_CHECK_FOR_UPDATES: &str = "check-for-updates";
 
 pub struct AppState {
     pub project_service: ProjectService,
@@ -94,6 +98,13 @@ fn build_app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result
             true,
             Option::<&str>::None,
         )?;
+        let check_for_updates_item = MenuItem::with_id(
+            app,
+            MENU_CHECK_FOR_UPDATES_ID,
+            "Check for Updates…",
+            true,
+            Option::<&str>::None,
+        )?;
         let separator = PredefinedMenuItem::separator(app)?;
 
         submenu.insert_items(
@@ -101,6 +112,7 @@ fn build_app_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result
                 &settings_item,
                 &open_config_item,
                 &reload_config_item,
+                &check_for_updates_item,
                 &separator,
             ],
             2,
@@ -138,6 +150,7 @@ fn main() {
                     }
                 }
                 MENU_RELOAD_CONFIG_ID => emit_to_main_window(app, EVENT_RELOAD_SETTINGS),
+                MENU_CHECK_FOR_UPDATES_ID => emit_to_main_window(app, EVENT_CHECK_FOR_UPDATES),
                 _ => {}
             });
 

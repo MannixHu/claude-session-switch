@@ -24,6 +24,14 @@ import {
   updateSessionAliasesForDraft,
 } from "../lib/claudeSessions";
 import { getClaudeAutoResponseForOutput } from "../lib/claudeTerminalAutomation";
+import {
+  applyUpdateCheckResult,
+  applyUpdateError,
+  applyUpdateSuccess,
+  beginUpdateCheck,
+  beginUpdateDownload,
+  createIdleUpdateState,
+} from "../lib/updateFlow";
 import "./ProjectDashboard.css";
 
 type ThemeMode = "dark" | "light";
@@ -147,6 +155,7 @@ const SETTINGS_PERSIST_DEBOUNCE_MS = 480;
 const INVALID_CLAUDE_SESSION_OUTPUT_PATTERN = /No conversation found with session ID:/i;
 const INVALID_SESSION_OUTPUT_BUFFER_LIMIT = 600;
 const WORKSPACE_TRUST_OUTPUT_BUFFER_LIMIT = 2400;
+const UPDATE_CHECK_EVENT = "check-for-updates";
 const DEFAULT_TERMINAL_FONT_FAMILY =
   '"JetBrains Mono", "SF Pro Text", "SF Mono", "SFMono-Regular", "Consolas", "Menlo", "Monaco", "Courier New", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Noto Sans Mono CJK SC", "Noto Sans Mono CJK JP", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "WenQuanYi Micro Hei", "Noto Color Emoji", "Segoe UI", "Ubuntu Mono", monospace';
 const TERMINAL_SCROLLBAR_WIDTH_OPTIONS = [4, 5, 6, 8] as const;
@@ -522,6 +531,8 @@ export function ProjectDashboard() {
     openProjectInTerminal,
     openProjectInEditor,
     deleteClaudeSession,
+    checkForUpdates,
+    downloadAndOpenUpdate,
     clearError,
     error,
   } = useBackend();
@@ -543,6 +554,7 @@ export function ProjectDashboard() {
   const [openTerminalSessionIds, setOpenTerminalSessionIds] = useState<Set<string>>(new Set());
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
+  const [updateState, setUpdateState] = useState(createIdleUpdateState);
   const [sessionAliases, setSessionAliases] = useState<Record<string, string>>({});
   const [hiddenClaudeSessions, setHiddenClaudeSessions] = useState<Record<string, boolean>>({});
   const [restoreLastOpenedSession, setRestoreLastOpenedSession] = useState(true);
@@ -587,8 +599,90 @@ export function ProjectDashboard() {
   const invalidSessionOutputBufferRef = useRef<Map<string, string>>(new Map());
   const workspaceTrustOutputBufferRef = useRef<Map<string, string>>(new Map());
   const autoConfirmedTrustPromptRef = useRef<Set<string>>(new Set());
+  const updateStateRef = useRef(updateState);
 
   const t = useMemo(() => createTranslator(appLanguage), [appLanguage]);
+
+  useEffect(() => {
+    updateStateRef.current = updateState;
+  }, [updateState]);
+
+  const normalizeErrorMessage = useCallback((value: unknown): string => {
+    return value instanceof Error ? value.message : String(value);
+  }, []);
+
+  const handleCheckForUpdates = useCallback(async () => {
+    const nextState = beginUpdateCheck(updateStateRef.current);
+    if (nextState === updateStateRef.current) {
+      setStatusMessage(t("status_update_busy"));
+      return;
+    }
+
+    updateStateRef.current = nextState;
+    setUpdateState(nextState);
+    setStatusMessage(t("status_update_checking"));
+
+    try {
+      const result = await checkForUpdates();
+      const checkedState = applyUpdateCheckResult(nextState, result);
+      updateStateRef.current = checkedState;
+      setUpdateState(checkedState);
+
+      if (!result.update_available) {
+        setStatusMessage(t("status_update_up_to_date", { version: result.latest_version }));
+        const idleState = createIdleUpdateState();
+        updateStateRef.current = idleState;
+        setUpdateState(idleState);
+        return;
+      }
+
+      const confirmed = window.confirm(
+        t("confirm_update_available", {
+          current: result.current_version,
+          latest: result.latest_version,
+        })
+      );
+
+      if (!confirmed) {
+        const idleState = createIdleUpdateState();
+        updateStateRef.current = idleState;
+        setUpdateState(idleState);
+        return;
+      }
+
+      const downloadingState = beginUpdateDownload(checkedState);
+      updateStateRef.current = downloadingState;
+      setUpdateState(downloadingState);
+      setStatusMessage(t("status_update_downloading", { version: result.latest_version }));
+
+      const downloadResult = await downloadAndOpenUpdate({
+        download_url: result.download_url,
+        asset_name: result.asset_name,
+        expected_sha256: result.expected_sha256,
+        version: result.latest_version,
+      });
+
+      const completedState = applyUpdateSuccess(downloadingState);
+      updateStateRef.current = completedState;
+      setUpdateState(completedState);
+      setStatusMessage(
+        t("status_update_installer_opened", { version: downloadResult.version })
+      );
+      window.alert(
+        t("alert_update_install_guidance", { version: downloadResult.version })
+      );
+
+      const idleState = createIdleUpdateState();
+      updateStateRef.current = idleState;
+      setUpdateState(idleState);
+    } catch (error) {
+      const message = normalizeErrorMessage(error);
+      const erroredState = applyUpdateError(updateStateRef.current, message);
+      updateStateRef.current = erroredState;
+      setUpdateState(erroredState);
+      setStatusMessage(t("status_update_failed", { message }));
+    }
+  }, [checkForUpdates, downloadAndOpenUpdate, normalizeErrorMessage, t]);
 
   const getSessionAlias = useCallback(
     (session: Pick<ClaudeSession, "project_path" | "session_id">): string | null => {
@@ -633,6 +727,7 @@ export function ProjectDashboard() {
   useEffect(() => {
     let unlistenSettingsMenu: (() => void) | null = null;
     let unlistenReloadConfig: (() => void) | null = null;
+    let unlistenCheckForUpdates: (() => void) | null = null;
 
     const setupMenuListeners = async () => {
       try {
@@ -644,6 +739,10 @@ export function ProjectDashboard() {
         unlistenReloadConfig = await listen("reload-settings", () => {
           setSettingsReloadToken((previous) => previous + 1);
           setStatusMessage(t("status_reload_settings"));
+        });
+
+        unlistenCheckForUpdates = await listen(UPDATE_CHECK_EVENT, () => {
+          void handleCheckForUpdates();
         });
       } catch (error) {
         console.warn("Failed to register macOS menu listeners", error);
@@ -660,8 +759,12 @@ export function ProjectDashboard() {
       if (unlistenReloadConfig) {
         unlistenReloadConfig();
       }
+
+      if (unlistenCheckForUpdates) {
+        unlistenCheckForUpdates();
+      }
     };
-  }, []);
+  }, [handleCheckForUpdates, t]);
 
   useEffect(() => {
     let unlistenPtyExit: (() => void) | null = null;
