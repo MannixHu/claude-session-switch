@@ -4,6 +4,7 @@ pub mod pty_service;
 pub mod session_service;
 pub mod settings_service;
 pub mod storage_service;
+pub mod update_service;
 
 pub use claude_session_service::ClaudeSessionService;
 pub use project_service::ProjectService;
