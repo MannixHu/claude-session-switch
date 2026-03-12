@@ -55,7 +55,7 @@ export function applyUpdateCheckResult(
 }
 
 export function beginUpdateDownload(state: UpdateState): UpdateState {
-  if (!state.metadata) {
+  if (!state.metadata || state.phase !== "available") {
     return state;
   }
 

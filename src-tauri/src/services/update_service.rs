@@ -20,7 +20,7 @@ struct GithubRelease {
     #[serde(default)]
     html_url: String,
     #[serde(default)]
-    body: String,
+    body: Option<String>,
     #[serde(default)]
     published_at: String,
     #[serde(default)]
@@ -149,7 +149,7 @@ impl UpdateService {
                 latest_version: normalized_latest,
                 update_available: false,
                 release_url: release.html_url,
-                release_notes: release.body,
+                release_notes: release.body.clone().unwrap_or_default(),
                 published_at: release.published_at,
                 target_arch,
                 asset_name: String::new(),
@@ -190,7 +190,7 @@ impl UpdateService {
             latest_version: normalized_latest,
             update_available: true,
             release_url: release.html_url,
-            release_notes: release.body,
+            release_notes: release.body.clone().unwrap_or_default(),
             published_at: release.published_at,
             target_arch,
             asset_name: expected_asset_name,
@@ -231,7 +231,7 @@ impl UpdateService {
                 latest_version: normalized_latest,
                 update_available: false,
                 release_url: release.html_url,
-                release_notes: release.body,
+                release_notes: release.body.clone().unwrap_or_default(),
                 published_at: release.published_at,
                 target_arch,
                 asset_name: String::new(),
@@ -430,6 +430,35 @@ mod tests {
 
         assert!(!result.update_available);
         assert_eq!(result.latest_version, "0.1.16");
+    }
+
+    #[test]
+    fn latest_release_accepts_null_body() {
+        let release_json = r#"{
+          "tag_name": "v0.1.17",
+          "body": null,
+          "assets": [
+            {
+              "name": "ClaudeSessionSwitch_0.1.17_arm64.dmg",
+              "browser_download_url": "https://example.com/arm64.dmg"
+            },
+            {
+              "name": "SHA256SUMS",
+              "browser_download_url": "https://example.com/SHA256SUMS"
+            }
+          ]
+        }"#;
+
+        let result = UpdateService::resolve_release(
+            "0.1.16",
+            "aarch64",
+            release_json,
+            "abc123  ClaudeSessionSwitch_0.1.17_arm64.dmg\n",
+        )
+        .unwrap();
+
+        assert_eq!(result.release_notes, "");
+        assert!(result.update_available);
     }
 
     #[test]
