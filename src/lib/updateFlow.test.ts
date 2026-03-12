@@ -97,6 +97,31 @@ test("beginUpdateDownload ignores duplicate triggers while already downloading",
   assert.equal(next, downloading);
 });
 
+test("beginUpdateDownload retries from an error state when metadata is still present", () => {
+  const errored = {
+    ...applyUpdateCheckResult(createIdleUpdateState(), {
+      current_version: "0.1.16",
+      latest_version: "0.1.17",
+      update_available: true,
+      release_url: "https://example.com/releases/v0.1.17",
+      release_notes: "## Changelog",
+      published_at: "2026-03-12T08:15:00Z",
+      target_arch: "arm64",
+      asset_name: "ClaudeSessionSwitch_0.1.17_arm64.dmg",
+      download_url: "https://example.com/arm64.dmg",
+      expected_sha256: "abc123",
+    }),
+    phase: "error" as const,
+    error: "network failed",
+  };
+
+  const next = beginUpdateDownload(errored);
+
+  assert.equal(next.phase, "downloading");
+  assert.equal(next.error, "");
+  assert.equal(next.metadata?.asset_name, "ClaudeSessionSwitch_0.1.17_arm64.dmg");
+});
+
 test("applyUpdateCheckResult keeps metadata for the up_to_date dialog state", () => {
   const next = applyUpdateCheckResult(createIdleUpdateState(), {
     current_version: "0.1.18",

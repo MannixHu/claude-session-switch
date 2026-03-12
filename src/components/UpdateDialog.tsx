@@ -41,7 +41,8 @@ export default function UpdateDialog({
   const currentVersion = metadata?.current_version ?? "";
   const releaseUrl = metadata?.release_url?.trim() ?? "";
   const canDownload =
-    state.phase === "available" && Boolean(metadata?.download_url && metadata?.asset_name);
+    (state.phase === "available" || state.phase === "error") &&
+    Boolean(metadata?.download_url && metadata?.asset_name);
 
   const titleByPhase: Record<UpdateState["phase"], string> = {
     idle: t("update_dialog_title"),
