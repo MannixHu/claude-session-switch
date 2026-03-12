@@ -1,6 +1,6 @@
 {
   "productName": "Claude Session Switch",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "identifier": "com.cloudcode.sessionswitch",
   "build": {
     "beforeDevCommand": "npm run dev:ui",
