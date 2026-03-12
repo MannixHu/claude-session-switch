@@ -2,9 +2,15 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { LogicalSize, getCurrentWindow } from "@tauri-apps/api/window";
-import { Project, ClaudeSession, useBackend } from "../hooks/useBackend";
+import {
+  Project,
+  ClaudeSession,
+  DownloadedUpdateResult,
+  useBackend,
+} from "../hooks/useBackend";
 import { LayoutState, useWindowManager } from "../hooks/useWindowManager";
 import EmbeddedTerminal from "../components/EmbeddedTerminal";
+import UpdateDialog from "../components/UpdateDialog";
 import {
   AppLanguage,
   DEFAULT_APP_LANGUAGE,
@@ -32,6 +38,7 @@ import {
   beginUpdateDownload,
   createIdleUpdateState,
 } from "../lib/updateFlow";
+import { formatPublishedDate, parseUpdateReleaseNotes } from "../lib/updateReleaseNotes";
 import {
   DEFAULT_THEME_PRESET,
   normalizeThemePreset,
@@ -540,6 +547,7 @@ export function ProjectDashboard() {
     deleteClaudeSession,
     checkForUpdates,
     downloadAndOpenUpdate,
+    openExternalUrl,
     clearError,
     error,
   } = useBackend();
@@ -562,6 +570,8 @@ export function ProjectDashboard() {
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
   const [updateState, setUpdateState] = useState(createIdleUpdateState);
+  const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
+  const [downloadedUpdate, setDownloadedUpdate] = useState<DownloadedUpdateResult | null>(null);
   const [sessionAliases, setSessionAliases] = useState<Record<string, string>>({});
   const [hiddenClaudeSessions, setHiddenClaudeSessions] = useState<Record<string, boolean>>({});
   const [restoreLastOpenedSession, setRestoreLastOpenedSession] = useState(true);
@@ -621,6 +631,8 @@ export function ProjectDashboard() {
 
   const handleCheckForUpdates = useCallback(async () => {
     const nextState = beginUpdateCheck(updateStateRef.current);
+    setIsUpdateDialogOpen(true);
+    setDownloadedUpdate(null);
     if (nextState === updateStateRef.current) {
       setStatusMessage(t("status_update_busy"));
       return;
@@ -638,51 +650,8 @@ export function ProjectDashboard() {
 
       if (!result.update_available) {
         setStatusMessage(t("status_update_up_to_date", { version: result.latest_version }));
-        const idleState = createIdleUpdateState();
-        updateStateRef.current = idleState;
-        setUpdateState(idleState);
         return;
       }
-
-      const confirmed = window.confirm(
-        t("confirm_update_available", {
-          current: result.current_version,
-          latest: result.latest_version,
-        })
-      );
-
-      if (!confirmed) {
-        const idleState = createIdleUpdateState();
-        updateStateRef.current = idleState;
-        setUpdateState(idleState);
-        return;
-      }
-
-      const downloadingState = beginUpdateDownload(checkedState);
-      updateStateRef.current = downloadingState;
-      setUpdateState(downloadingState);
-      setStatusMessage(t("status_update_downloading", { version: result.latest_version }));
-
-      const downloadResult = await downloadAndOpenUpdate({
-        download_url: result.download_url,
-        asset_name: result.asset_name,
-        expected_sha256: result.expected_sha256,
-        version: result.latest_version,
-      });
-
-      const completedState = applyUpdateSuccess(downloadingState);
-      updateStateRef.current = completedState;
-      setUpdateState(completedState);
-      setStatusMessage(
-        t("status_update_installer_opened", { version: downloadResult.version })
-      );
-      window.alert(
-        t("alert_update_install_guidance", { version: downloadResult.version })
-      );
-
-      const idleState = createIdleUpdateState();
-      updateStateRef.current = idleState;
-      setUpdateState(idleState);
     } catch (error) {
       const message = normalizeErrorMessage(error);
       const erroredState = applyUpdateError(updateStateRef.current, message);
@@ -690,7 +659,72 @@ export function ProjectDashboard() {
       setUpdateState(erroredState);
       setStatusMessage(t("status_update_failed", { message }));
     }
-  }, [checkForUpdates, downloadAndOpenUpdate, normalizeErrorMessage, t]);
+  }, [checkForUpdates, normalizeErrorMessage, t]);
+
+  const handleDownloadUpdate = useCallback(async () => {
+    const currentState = updateStateRef.current;
+    const metadata = currentState.metadata;
+    if (!metadata) {
+      return;
+    }
+
+    const downloadingState = beginUpdateDownload(currentState);
+    if (downloadingState === currentState) {
+      return;
+    }
+
+    updateStateRef.current = downloadingState;
+    setUpdateState(downloadingState);
+    setStatusMessage(t("status_update_downloading", { version: metadata.latest_version }));
+
+    try {
+      const downloadResult = await downloadAndOpenUpdate({
+        download_url: metadata.download_url,
+        asset_name: metadata.asset_name,
+        expected_sha256: metadata.expected_sha256,
+        version: metadata.latest_version,
+      });
+
+      setDownloadedUpdate(downloadResult);
+      const completedState = applyUpdateSuccess(downloadingState);
+      updateStateRef.current = completedState;
+      setUpdateState(completedState);
+      setStatusMessage(t("status_update_installer_opened", { version: downloadResult.version }));
+    } catch (error) {
+      const message = normalizeErrorMessage(error);
+      const erroredState = applyUpdateError(updateStateRef.current, message);
+      updateStateRef.current = erroredState;
+      setUpdateState(erroredState);
+      setStatusMessage(t("status_update_failed", { message }));
+    }
+  }, [downloadAndOpenUpdate, normalizeErrorMessage, t]);
+
+  const handleOpenUpdateRelease = useCallback(async () => {
+    const releaseUrl = updateStateRef.current.metadata?.release_url?.trim();
+    if (!releaseUrl) {
+      return;
+    }
+
+    try {
+      await openExternalUrl(releaseUrl);
+    } catch (error) {
+      const message = normalizeErrorMessage(error);
+      setStatusMessage(t("status_open_release_failed", { message }));
+    }
+  }, [normalizeErrorMessage, openExternalUrl, t]);
+
+  const handleCloseUpdateDialog = useCallback(() => {
+    const phase = updateStateRef.current.phase;
+    if (phase === "checking" || phase === "downloading") {
+      return;
+    }
+
+    const idleState = createIdleUpdateState();
+    updateStateRef.current = idleState;
+    setUpdateState(idleState);
+    setDownloadedUpdate(null);
+    setIsUpdateDialogOpen(false);
+  }, []);
 
   const getSessionAlias = useCallback(
     (session: Pick<ClaudeSession, "project_path" | "session_id">): string | null => {
@@ -2347,6 +2381,14 @@ export function ProjectDashboard() {
     return formatSessionLabel(selectedSessionContext.session);
   }, [selectedSessionContext, sessionAliases]);
 
+  const parsedUpdateReleaseNotes = useMemo(() => {
+    return parseUpdateReleaseNotes(updateState.metadata?.release_notes ?? "");
+  }, [updateState.metadata?.release_notes]);
+
+  const updatePublishedAtLabel = useMemo(() => {
+    return formatPublishedDate(updateState.metadata?.published_at ?? "", appLanguage);
+  }, [appLanguage, updateState.metadata?.published_at]);
+
   const handleTerminalOutput = useCallback(
     (sessionId: string, data: string) => {
       if (!data) {
@@ -2737,6 +2779,20 @@ export function ProjectDashboard() {
           </div>
         </div>
       )}
+
+      <UpdateDialog
+        isOpen={isUpdateDialogOpen}
+        state={updateState}
+        publishedAtLabel={updatePublishedAtLabel}
+        changelogRows={parsedUpdateReleaseNotes.changelogRows}
+        summaryNotes={parsedUpdateReleaseNotes.summaryNotes}
+        downloadedPath={downloadedUpdate?.downloaded_path ?? ""}
+        canClose={updateState.phase !== "checking" && updateState.phase !== "downloading"}
+        t={t}
+        onClose={handleCloseUpdateDialog}
+        onDownload={handleDownloadUpdate}
+        onOpenRelease={handleOpenUpdateRelease}
+      />
 
       {error && <div className="global-error">{error}</div>}
       {statusMessage && <div className="global-status">{statusMessage}</div>}

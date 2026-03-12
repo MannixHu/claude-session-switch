@@ -18,6 +18,12 @@ const UPDATE_TEMP_DIR_NAME: &str = "claude-session-switch-updates";
 struct GithubRelease {
     tag_name: String,
     #[serde(default)]
+    html_url: String,
+    #[serde(default)]
+    body: String,
+    #[serde(default)]
+    published_at: String,
+    #[serde(default)]
     assets: Vec<GithubReleaseAsset>,
 }
 
@@ -32,6 +38,9 @@ pub struct UpdateCheckResult {
     pub current_version: String,
     pub latest_version: String,
     pub update_available: bool,
+    pub release_url: String,
+    pub release_notes: String,
+    pub published_at: String,
     pub target_arch: String,
     pub asset_name: String,
     pub download_url: String,
@@ -139,6 +148,9 @@ impl UpdateService {
                 current_version: normalized_current,
                 latest_version: normalized_latest,
                 update_available: false,
+                release_url: release.html_url,
+                release_notes: release.body,
+                published_at: release.published_at,
                 target_arch,
                 asset_name: String::new(),
                 download_url: String::new(),
@@ -177,6 +189,9 @@ impl UpdateService {
             current_version: normalized_current,
             latest_version: normalized_latest,
             update_available: true,
+            release_url: release.html_url,
+            release_notes: release.body,
+            published_at: release.published_at,
             target_arch,
             asset_name: expected_asset_name,
             download_url: asset.browser_download_url.clone(),
@@ -215,6 +230,9 @@ impl UpdateService {
                 current_version: normalized_current,
                 latest_version: normalized_latest,
                 update_available: false,
+                release_url: release.html_url,
+                release_notes: release.body,
+                published_at: release.published_at,
                 target_arch,
                 asset_name: String::new(),
                 download_url: String::new(),
@@ -366,8 +384,11 @@ mod tests {
 
     #[test]
     fn latest_release_selects_arm64_asset_and_checksum() {
-        let release_json = r#"{
+        let release_json = r###"{
           "tag_name": "v0.1.17",
+          "html_url": "https://example.com/releases/v0.1.17",
+          "body": "## Changelog\n\n| Commit | Description |\n| --- | --- |\n| `abc123` | feat: example |\n",
+          "published_at": "2026-03-12T08:15:00Z",
           "assets": [
             {
               "name": "ClaudeSessionSwitch_0.1.17_arm64.dmg",
@@ -382,7 +403,7 @@ mod tests {
               "browser_download_url": "https://example.com/SHA256SUMS"
             }
           ]
-        }"#;
+        }"###;
         let checksums = "abc123  ClaudeSessionSwitch_0.1.17_arm64.dmg\nfff999  ClaudeSessionSwitch_0.1.17_x64.dmg\n";
 
         let result =
@@ -393,6 +414,9 @@ mod tests {
         assert_eq!(result.latest_version, "0.1.17");
         assert_eq!(result.asset_name, "ClaudeSessionSwitch_0.1.17_arm64.dmg");
         assert_eq!(result.expected_sha256, "abc123");
+        assert_eq!(result.release_url, "https://example.com/releases/v0.1.17");
+        assert_eq!(result.published_at, "2026-03-12T08:15:00Z");
+        assert!(result.release_notes.contains("## Changelog"));
     }
 
     #[test]

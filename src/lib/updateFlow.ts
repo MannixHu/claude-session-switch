@@ -43,7 +43,7 @@ export function applyUpdateCheckResult(
     return {
       phase: "up_to_date",
       error: "",
-      metadata: null,
+      metadata: result,
     };
   }
 

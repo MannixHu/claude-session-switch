@@ -72,6 +72,9 @@ export interface UpdateCheckResult {
   current_version: string;
   latest_version: string;
   update_available: boolean;
+  release_url: string;
+  release_notes: string;
+  published_at: string;
   target_arch: string;
   asset_name: string;
   download_url: string;
@@ -668,6 +671,19 @@ function useCreateBackend() {
     [runWithState]
   );
 
+  const openExternalUrl = useCallback(
+    async (url: string): Promise<void> => {
+      return runWithState(
+        () =>
+          invoke<void>("open_external_url", {
+            url,
+          }),
+        false
+      );
+    },
+    [runWithState]
+  );
+
   return {
     // State
     loading: state.pendingRequests > 0,
@@ -714,6 +730,7 @@ function useCreateBackend() {
     deleteClaudeSession,
     checkForUpdates,
     downloadAndOpenUpdate,
+    openExternalUrl,
   };
 }
 
