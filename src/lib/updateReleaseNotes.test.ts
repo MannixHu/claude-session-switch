@@ -62,3 +62,19 @@ Manual installer flow remains unchanged.
   assert.equal(parsed.summaryNotes.includes("richer updater dialog"), true);
   assert.equal(parsed.summaryNotes.includes("## Notes"), true);
 });
+
+test("parseUpdateReleaseNotes keeps escaped pipes inside changelog descriptions", () => {
+  const parsed = parseUpdateReleaseNotes(`## Changelog
+
+| Commit | Description |
+| --- | --- |
+| \`abc123\` | feat: allow a\\|b values |
+`);
+
+  assert.deepEqual(parsed.changelogRows, [
+    {
+      commit: "abc123",
+      description: "feat: allow a|b values",
+    },
+  ]);
+});

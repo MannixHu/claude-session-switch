@@ -10,6 +10,39 @@ export type ParsedUpdateReleaseNotes = {
   summaryNotes: string;
 };
 
+function splitMarkdownTableColumns(line: string): string[] {
+  const trimmed = line.trim();
+  const withoutLeadingPipe = trimmed.startsWith("|") ? trimmed.slice(1) : trimmed;
+  const content = withoutLeadingPipe.endsWith("|")
+    ? withoutLeadingPipe.slice(0, -1)
+    : withoutLeadingPipe;
+
+  const columns: string[] = [];
+  let current = "";
+
+  for (let index = 0; index < content.length; index += 1) {
+    const char = content[index];
+    const next = content[index + 1];
+
+    if (char === "\\" && (next === "|" || next === "\\")) {
+      current += next;
+      index += 1;
+      continue;
+    }
+
+    if (char === "|") {
+      columns.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  columns.push(current.trim());
+  return columns;
+}
+
 export function parseUpdateReleaseNotes(releaseNotes: string): ParsedUpdateReleaseNotes {
   const normalized = releaseNotes.trim();
   if (!normalized) {
@@ -48,10 +81,7 @@ export function parseUpdateReleaseNotes(releaseNotes: string): ParsedUpdateRelea
 
     tableStarted = true;
     tableEndedAt = index + 1;
-    const columns = line
-      .split("|")
-      .slice(1, -1)
-      .map((value) => value.trim());
+    const columns = splitMarkdownTableColumns(line);
 
     if (columns.length < 2) {
       continue;
