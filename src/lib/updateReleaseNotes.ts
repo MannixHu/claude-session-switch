@@ -10,6 +10,12 @@ export type ParsedUpdateReleaseNotes = {
   summaryNotes: string;
 };
 
+function normalizeCommitCell(value: string): string {
+  const markdownLinkMatch = value.match(/^\[(.+)\]\((.+)\)$/);
+  const label = markdownLinkMatch ? markdownLinkMatch[1] : value;
+  return label.replace(/^`|`$/g, "");
+}
+
 function splitMarkdownTableColumns(line: string): string[] {
   const trimmed = line.trim();
   const withoutLeadingPipe = trimmed.startsWith("|") ? trimmed.slice(1) : trimmed;
@@ -97,7 +103,7 @@ export function parseUpdateReleaseNotes(releaseNotes: string): ParsedUpdateRelea
     }
 
     rows.push({
-      commit: first.replace(/^`|`$/g, ""),
+      commit: normalizeCommitCell(first),
       description: second,
     });
   }

@@ -23,6 +23,41 @@ escape_markdown() {
   printf '%s' "${value}"
 }
 
+resolve_repo_web_url() {
+  if [[ -n "${GITHUB_SERVER_URL:-}" && -n "${GITHUB_REPOSITORY:-}" ]]; then
+    printf '%s/%s' "${GITHUB_SERVER_URL}" "${GITHUB_REPOSITORY}"
+    return 0
+  fi
+
+  local remote_url
+  remote_url="$(git remote get-url origin 2>/dev/null || true)"
+
+  if [[ -z "${remote_url}" ]]; then
+    return 1
+  fi
+
+  remote_url="${remote_url%.git}"
+
+  case "${remote_url}" in
+    git@*:* )
+      remote_url="${remote_url#git@}"
+      printf 'https://%s' "${remote_url/:/\/}"
+      ;;
+    ssh://git@* )
+      remote_url="${remote_url#ssh://git@}"
+      printf 'https://%s' "${remote_url}"
+      ;;
+    https://*|http://* )
+      printf '%s' "${remote_url}"
+      ;;
+    * )
+      return 1
+      ;;
+  esac
+}
+
+REPO_WEB_URL="$(resolve_repo_web_url || true)"
+
 echo "## Changelog"
 echo
 echo "| Commit | Description |"
@@ -34,7 +69,15 @@ else
   RANGE="${CURRENT_TAG}"
 fi
 
-while IFS=$'\t' read -r short_sha subject || [[ -n "${short_sha}" ]]; do
-  [[ -n "${short_sha}" ]] || continue
-  printf '| `%s` | %s |\n' "${short_sha}" "$(escape_markdown "${subject}")"
-done < <(git log --no-merges --pretty=format:'%h%x09%s' "${RANGE}")
+while IFS=$'\t' read -r full_sha short_sha subject || [[ -n "${full_sha}" ]]; do
+  [[ -n "${full_sha}" ]] || continue
+  [[ "${subject}" =~ ^release:\ v[0-9] ]] && continue
+
+  if [[ -n "${REPO_WEB_URL}" ]]; then
+    commit_cell="[\`${short_sha}\`](${REPO_WEB_URL}/commit/${full_sha})"
+  else
+    commit_cell="\`${short_sha}\`"
+  fi
+
+  printf '| %s | %s |\n' "${commit_cell}" "$(escape_markdown "${subject}")"
+done < <(git log --no-merges --pretty=format:'%H%x09%h%x09%s' "${RANGE}")

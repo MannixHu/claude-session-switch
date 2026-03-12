@@ -78,3 +78,19 @@ test("parseUpdateReleaseNotes keeps escaped pipes inside changelog descriptions"
     },
   ]);
 });
+
+test("parseUpdateReleaseNotes extracts plain commit ids from markdown links", () => {
+  const parsed = parseUpdateReleaseNotes(`## Changelog
+
+| Commit | Description |
+| --- | --- |
+| [\`abc123\`](https://github.com/example/repo/commit/abc123def456) | feat: linked row |
+`);
+
+  assert.deepEqual(parsed.changelogRows, [
+    {
+      commit: "abc123",
+      description: "feat: linked row",
+    },
+  ]);
+});
