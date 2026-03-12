@@ -1,6 +1,6 @@
 {
   "name": "claude-session-switch",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "private": true,
   "description": "Desktop Claude Code session switcher with embedded terminal, project grouping, and resume support",
   "type": "module",
