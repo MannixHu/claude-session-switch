@@ -190,6 +190,12 @@ jobs:
     needs: build-macos
 
     steps:
+      - name: Checkout tag source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG_NAME }}
+          fetch-depth: 0
+
       - name: Download arm64 artifacts
         uses: actions/download-artifact@v4
         with:
@@ -210,11 +216,19 @@ jobs:
           echo "SHA256SUMS contents:"
           cat SHA256SUMS
 
+      - name: Generate release notes
+        run: |
+          chmod +x scripts/generate-release-notes.sh
+          scripts/generate-release-notes.sh "${TAG_NAME}" > release-assets/RELEASE_NOTES.md
+          echo "Release notes contents:"
+          cat release-assets/RELEASE_NOTES.md
+
       - name: Create release with auto notes
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG_NAME }}
           name: ${{ env.TAG_NAME }}
+          body_path: release-assets/RELEASE_NOTES.md
           generate_release_notes: true
           draft: false
           prerelease: false
