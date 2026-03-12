@@ -32,6 +32,12 @@ import {
   beginUpdateDownload,
   createIdleUpdateState,
 } from "../lib/updateFlow";
+import {
+  DEFAULT_THEME_PRESET,
+  normalizeThemePreset,
+  resolveActiveThemePalette,
+  type ThemePreset,
+} from "../lib/themePresets";
 import "./ProjectDashboard.css";
 
 type ThemeMode = "dark" | "light";
@@ -106,6 +112,7 @@ type AppSettingsFile = {
   version: number;
   appearance: {
     theme_preference: ThemePreference;
+    theme_preset: ThemePreset;
     language: AppLanguage;
     theme_palettes: ThemePalettes;
   };
@@ -577,6 +584,7 @@ export function ProjectDashboard() {
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
   const [dragOverProjectId, setDragOverProjectId] = useState<string | null>(null);
   const [themePreference, setThemePreference] = useState<ThemePreference>("light");
+  const [themePreset, setThemePreset] = useState<ThemePreset>(DEFAULT_THEME_PRESET);
   const [appLanguage, setAppLanguage] = useState<AppLanguage>(DEFAULT_APP_LANGUAGE);
   const [themeMode, setThemeMode] = useState<ThemeMode>("light");
   const [isThemeTransitioning, setIsThemeTransitioning] = useState(false);
@@ -1201,6 +1209,7 @@ export function ProjectDashboard() {
         }
 
         setThemePreference(normalizeThemePreference(settings.appearance?.theme_preference));
+        setThemePreset(normalizeThemePreset(settings.appearance?.theme_preset));
         setAppLanguage(resolveAppLanguage(settings.appearance?.language));
         setThemePalettes(normalizeThemePalettes(settings.appearance?.theme_palettes));
         setClaudeStartupSettings({
@@ -1414,9 +1423,10 @@ export function ProjectDashboard() {
     }
 
     const settingsPayload: AppSettingsFile = {
-      version: 10,
+      version: 11,
       appearance: {
         theme_preference: themePreference,
+        theme_preset: themePreset,
         language: appLanguage,
         theme_palettes: themePalettes,
       },
@@ -1478,6 +1488,7 @@ export function ProjectDashboard() {
   }, [
     settingsReady,
     themePreference,
+    themePreset,
     appLanguage,
     themePalettes,
     claudeStartupSettings,
@@ -2277,8 +2288,8 @@ export function ProjectDashboard() {
   );
 
   const activeThemePalette = useMemo<ThemePalette>(() => {
-    return themeMode === "dark" ? themePalettes.dark : themePalettes.light;
-  }, [themeMode, themePalettes]);
+    return resolveActiveThemePalette(themePreset, themeMode, themePalettes);
+  }, [themeMode, themePalettes, themePreset]);
 
   const terminalThemePalette = useMemo<TerminalThemePalette>(() => {
     return {
@@ -2588,6 +2599,17 @@ export function ProjectDashboard() {
                       <option value="en-US">{t("language_en_us")}</option>
                     </select>
 
+                    <div className="startup-settings-section-title">{t("section_theme_preset")}</div>
+                    <select
+                      className="startup-settings-select"
+                      value={themePreset}
+                      onChange={(event) => setThemePreset(normalizeThemePreset(event.target.value))}
+                    >
+                      <option value="default">{t("theme_preset_default")}</option>
+                      <option value="everforest">{t("theme_preset_everforest")}</option>
+                    </select>
+                    <p className="startup-settings-hint">{t("hint_theme_preset")}</p>
+
                     <div className="startup-settings-section-title">{t("section_theme_mode")}</div>
                     <div className="startup-settings-theme-options">
                       <label className="startup-settings-theme-option">
@@ -2621,7 +2643,11 @@ export function ProjectDashboard() {
                         <span>{t("theme_system")}</span>
                       </label>
                     </div>
-                    <p className="startup-settings-hint">{t("hint_theme_palette")}</p>
+                    <p className="startup-settings-hint">
+                      {themePreset === "default"
+                        ? t("hint_theme_palette_default")
+                        : t("hint_theme_palette_builtin")}
+                    </p>
                   </div>
                 )}
 

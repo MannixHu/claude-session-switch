@@ -3,11 +3,15 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 fn default_version() -> u32 {
-    10
+    11
 }
 
 fn default_theme_preference() -> String {
     "light".to_string()
+}
+
+fn default_theme_preset() -> String {
+    "default".to_string()
 }
 
 fn default_language() -> String {
@@ -89,6 +93,8 @@ impl Default for AppSettings {
 pub struct AppearanceSettings {
     #[serde(default = "default_theme_preference")]
     pub theme_preference: String,
+    #[serde(default = "default_theme_preset")]
+    pub theme_preset: String,
     #[serde(default = "default_language")]
     pub language: String,
     pub theme_palettes: ThemePalettes,
@@ -98,6 +104,7 @@ impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
             theme_preference: default_theme_preference(),
+            theme_preset: default_theme_preset(),
             language: default_language(),
             theme_palettes: ThemePalettes::default(),
         }

@@ -54,12 +54,19 @@ const dictionaries = {
     section_language: "语言",
     language_zh_cn: "中文",
     language_en_us: "English",
+    section_theme_preset: "主题预设",
+    theme_preset_default: "Default",
+    theme_preset_everforest: "Everforest",
+    hint_theme_preset:
+      "Default 保持当前这套主题；Everforest 保留 light / dark / system 三种模式。",
     section_theme_mode: "主题模式",
     theme_light: "浅色",
     theme_dark: "深色",
     theme_system: "跟随系统",
-    hint_theme_palette:
-      "主题色板存储在 preferences.json 中，可直接编辑以支持 AI 驱动的自定义主题。",
+    hint_theme_palette_default:
+      "Default 主题色板仍存储在 preferences.json 中，可继续直接编辑。",
+    hint_theme_palette_builtin:
+      "Everforest 使用内置预设色板，不读取 preferences.json 中的自定义主题色。",
     section_external_terminal: "外部终端",
     section_external_editor: "外部编辑器",
     hint_integrations:
@@ -138,12 +145,19 @@ const dictionaries = {
     section_language: "Language",
     language_zh_cn: "中文",
     language_en_us: "English",
+    section_theme_preset: "Theme preset",
+    theme_preset_default: "Default",
+    theme_preset_everforest: "Everforest",
+    hint_theme_preset:
+      "Default keeps the current built-in look. Everforest still supports light / dark / system modes.",
     section_theme_mode: "Theme mode",
     theme_light: "Light",
     theme_dark: "Dark",
     theme_system: "System",
-    hint_theme_palette:
-      "Theme palette colors are stored in preferences.json. You can customize the values there for AI-driven theming.",
+    hint_theme_palette_default:
+      "The Default preset still reads its customizable palette values from preferences.json.",
+    hint_theme_palette_builtin:
+      "Everforest uses a built-in palette and does not read custom theme colors from preferences.json.",
     section_external_terminal: "External terminal",
     section_external_editor: "External editor",
     hint_integrations:

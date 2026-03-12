@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use crate::models::app_settings::{AppSettings, LastOpenedSession, ThemePalette};
 use crate::services::storage_service::StorageService;
 
-const SETTINGS_VERSION: u32 = 10;
+const SETTINGS_VERSION: u32 = 11;
 const DEFAULT_CUSTOM_STARTUP_ARGS: &str = "--dangerously-skip-permissions";
 
 pub struct SettingsService {
@@ -305,6 +305,17 @@ impl SettingsService {
             _ => "system".to_string(),
         };
 
+        settings.appearance.theme_preset = match settings
+            .appearance
+            .theme_preset
+            .trim()
+            .to_lowercase()
+            .as_str()
+        {
+            "everforest" => "everforest".to_string(),
+            _ => "default".to_string(),
+        };
+
         settings.appearance.language = match settings.appearance.language.trim() {
             "en-US" => "en-US".to_string(),
             _ => "zh-CN".to_string(),
@@ -449,5 +460,56 @@ impl SettingsService {
 impl Default for SettingsService {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SettingsService;
+    use crate::models::app_settings::AppSettings;
+
+    #[test]
+    fn normalize_adds_default_theme_preset_for_legacy_settings() {
+        let legacy_settings: AppSettings = serde_json::from_value(serde_json::json!({
+            "version": 10,
+            "appearance": {
+                "theme_preference": "light",
+                "language": "zh-CN",
+                "theme_palettes": {}
+            },
+            "claude": {},
+            "integrations": {},
+            "ui": {},
+            "sessions": {}
+        }))
+        .expect("legacy settings should deserialize");
+
+        let normalized = SettingsService::normalize(legacy_settings);
+        let serialized = serde_json::to_value(&normalized).expect("settings should serialize");
+
+        assert_eq!(serialized["appearance"]["theme_preset"], "default");
+    }
+
+    #[test]
+    fn normalize_preserves_everforest_theme_preset() {
+        let settings_with_everforest: AppSettings = serde_json::from_value(serde_json::json!({
+            "version": 10,
+            "appearance": {
+                "theme_preference": "system",
+                "theme_preset": "everforest",
+                "language": "en-US",
+                "theme_palettes": {}
+            },
+            "claude": {},
+            "integrations": {},
+            "ui": {},
+            "sessions": {}
+        }))
+        .expect("settings should deserialize");
+
+        let normalized = SettingsService::normalize(settings_with_everforest);
+        let serialized = serde_json::to_value(&normalized).expect("settings should serialize");
+
+        assert_eq!(serialized["appearance"]["theme_preset"], "everforest");
     }
 }
