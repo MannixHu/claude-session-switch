@@ -10,6 +10,104 @@ export type SessionAliasUpdateResult = {
   status: "updated" | "cleared" | "unchanged";
 };
 
+const SESSION_HISTORY_SUMMARY_LINE =
+  /^\(This is a summary of earlier conversation turns for context\./i;
+const SESSION_TOOL_NOTE_LINE = /Tool calls shown here were already executed/i;
+
+const extractTextFromStructuredValue = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => extractTextFromStructuredValue(item))
+      .filter((item) => item.trim().length > 0)
+      .join("\n");
+  }
+
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (typeof record.text === "string" && record.text.trim().length > 0) {
+    return record.text;
+  }
+
+  for (const key of ["content", "title", "label", "summary", "prompt"] as const) {
+    const extracted = extractTextFromStructuredValue(record[key]);
+    if (extracted.trim().length > 0) {
+      return extracted;
+    }
+  }
+
+  return Object.values(record)
+    .map((item) => extractTextFromStructuredValue(item))
+    .filter((item) => item.trim().length > 0)
+    .join("\n");
+};
+
+const tryExtractStructuredSessionText = (value: string): string => {
+  const trimmed = value.trim();
+  if (!(trimmed.startsWith("[") || trimmed.startsWith("{"))) {
+    return value;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    const extracted = extractTextFromStructuredValue(parsed).trim();
+    return extracted || value;
+  } catch {
+    try {
+      const parsed = JSON.parse(trimmed.replace(/\r\n?|\n/g, "\\n")) as unknown;
+      const extracted = extractTextFromStructuredValue(parsed).trim();
+      return extracted || value;
+    } catch {
+      return value;
+    }
+  }
+};
+
+const stripHtmlComments = (value: string): string => {
+  return value.replace(/<!--[\s\S]*?-->/g, " ");
+};
+
+const replaceConversationTagBlock = (
+  value: string,
+  tagName: "conversation_history" | "conversation_summary"
+): string => {
+  const pattern = new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`, "gi");
+
+  return value.replace(pattern, (match, inner: string, offset: number, source: string) => {
+    const suffix = source.slice(offset + match.length).trim();
+    if (suffix.length > 0) {
+      return "\n";
+    }
+
+    return tagName === "conversation_summary" ? inner : "";
+  });
+};
+
+const cleanupSessionLabelText = (value: string): string => {
+  const extracted = tryExtractStructuredSessionText(value);
+  const normalized = stripHtmlComments(extracted).replace(/\r\n?/g, "\n").trim();
+  const withoutHistory = replaceConversationTagBlock(normalized, "conversation_history");
+  const withoutSummary = replaceConversationTagBlock(withoutHistory, "conversation_summary");
+
+  const lines = withoutSummary
+    .split("\n")
+    .map((line) => line.replace(/^(Human|Assistant):\s*/i, ""))
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter((line) => line.length > 0)
+    .filter((line) => !/^<[^>]+>$/.test(line))
+    .filter((line) => !SESSION_HISTORY_SUMMARY_LINE.test(line))
+    .filter((line) => !SESSION_TOOL_NOTE_LINE.test(line));
+
+  return lines[0] ?? "";
+};
+
 const normalizeAliasProjectPath = (projectPath: string): string => {
   return projectPath
     .replace(/\\/g, "/")
@@ -30,12 +128,14 @@ export function buildSessionAliasKey(projectPath: string, sessionId: string): st
 }
 
 export function getDefaultSessionLabel(session: SessionLabelSource): string {
-  if (session.summary.trim().length > 0) {
-    return session.summary;
+  const summary = cleanupSessionLabelText(session.summary);
+  if (summary.length > 0) {
+    return summary;
   }
 
-  if (session.first_prompt.trim().length > 0) {
-    return session.first_prompt;
+  const firstPrompt = cleanupSessionLabelText(session.first_prompt);
+  if (firstPrompt.length > 0) {
+    return firstPrompt;
   }
 
   return session.session_id.slice(0, 8);

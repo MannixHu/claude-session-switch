@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildSessionAliasKey,
+  getDefaultSessionLabel,
   getProjectsWithOpenPlainTerminals,
   getSessionAliasForItem,
   getVisibleClaudeSessions,
@@ -45,6 +46,39 @@ test("getVisibleClaudeSessions hides empty progress-only sessions", () => {
   const result = getVisibleClaudeSessions([session()]);
 
   assert.equal(result.length, 0);
+});
+
+test("getDefaultSessionLabel extracts plain text from structured first prompt JSON", () => {
+  const result = getDefaultSessionLabel(
+    session({
+      first_prompt:
+        '[{"type":"text","text":"<conversation_history>\\nEarlier context\\n</conversation_history>\\n\\nReview API auth flow and summarize the next steps"}]',
+    })
+  );
+
+  assert.equal(result, "Review API auth flow and summarize the next steps");
+});
+
+test("getDefaultSessionLabel extracts plain text from structured summary JSON", () => {
+  const result = getDefaultSessionLabel(
+    session({
+      summary:
+        '[{"type":"text","text":"<conversation_summary>\\nCheck project status\\n</conversation_summary>"}]',
+    })
+  );
+
+  assert.equal(result, "Check project status");
+});
+
+test("getDefaultSessionLabel handles json-ish prompt strings with literal newlines", () => {
+  const result = getDefaultSessionLabel(
+    session({
+      first_prompt:
+        '[{"type":"text","text":"<conversation_summary>\n检查项目状态\n</conversation_summary>"}]',
+    })
+  );
+
+  assert.equal(result, "检查项目状态");
 });
 
 test("getVisibleClaudeSessions keeps contentful sessions without summary", () => {

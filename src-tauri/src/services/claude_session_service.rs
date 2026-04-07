@@ -6,6 +6,140 @@ use std::path::{Path, PathBuf};
 pub struct ClaudeSessionService;
 
 impl ClaudeSessionService {
+    fn extract_text_from_json_value(value: &serde_json::Value) -> String {
+        match value {
+            serde_json::Value::String(text) => text.clone(),
+            serde_json::Value::Array(items) => items
+                .iter()
+                .map(Self::extract_text_from_json_value)
+                .filter(|text| !text.trim().is_empty())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            serde_json::Value::Object(map) => {
+                if let Some(text) = map.get("text").and_then(|value| value.as_str()) {
+                    if !text.trim().is_empty() {
+                        return text.to_string();
+                    }
+                }
+
+                for key in ["content", "title", "label", "summary", "prompt"] {
+                    if let Some(value) = map.get(key) {
+                        let extracted = Self::extract_text_from_json_value(value);
+                        if !extracted.trim().is_empty() {
+                            return extracted;
+                        }
+                    }
+                }
+
+                map.values()
+                    .map(Self::extract_text_from_json_value)
+                    .filter(|text| !text.trim().is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+            _ => String::new(),
+        }
+    }
+
+    fn try_extract_structured_session_text(raw: &str) -> String {
+        let trimmed = raw.trim();
+        if !(trimmed.starts_with('[') || trimmed.starts_with('{')) {
+            return raw.to_string();
+        }
+
+        serde_json::from_str::<serde_json::Value>(trimmed)
+            .ok()
+            .or_else(|| {
+                let escaped_newlines = trimmed.replace("\r\n", "\\n").replace('\n', "\\n");
+                serde_json::from_str::<serde_json::Value>(&escaped_newlines).ok()
+            })
+            .map(|value| Self::extract_text_from_json_value(&value))
+            .filter(|text| !text.trim().is_empty())
+            .unwrap_or_else(|| raw.to_string())
+    }
+
+    fn strip_html_comments(raw: &str) -> String {
+        let mut output = raw.to_string();
+
+        while let Some(start) = output.find("<!--") {
+            let Some(end_relative) = output[start + 4..].find("-->") else {
+                break;
+            };
+            let end = start + 4 + end_relative + 3;
+            output.replace_range(start..end, " ");
+        }
+
+        output
+    }
+
+    fn replace_conversation_tag_block(
+        raw: &str,
+        tag: &str,
+        keep_inner_when_terminal: bool,
+    ) -> String {
+        let open_tag = format!("<{}>", tag);
+        let close_tag = format!("</{}>", tag);
+        let mut output = raw.to_string();
+
+        while let Some(start) = output.find(&open_tag) {
+            let content_start = start + open_tag.len();
+            let Some(relative_end) = output[content_start..].find(&close_tag) else {
+                break;
+            };
+            let end = content_start + relative_end;
+            let before = output[..start].to_string();
+            let inner = output[content_start..end].to_string();
+            let after = output[end + close_tag.len()..].to_string();
+            let replacement = if after.trim().is_empty() {
+                if keep_inner_when_terminal {
+                    inner
+                } else {
+                    String::new()
+                }
+            } else {
+                "\n".to_string()
+            };
+
+            output = format!("{}{}{}", before, replacement, after);
+        }
+
+        output
+    }
+
+    fn sanitize_session_label(raw: &str) -> String {
+        let extracted = Self::try_extract_structured_session_text(raw);
+        let normalized = Self::strip_html_comments(&extracted)
+            .replace("\r\n", "\n")
+            .replace('\r', "\n");
+        let without_history =
+            Self::replace_conversation_tag_block(&normalized, "conversation_history", false);
+        let without_summary =
+            Self::replace_conversation_tag_block(&without_history, "conversation_summary", true);
+
+        without_summary
+            .lines()
+            .map(|line| {
+                line.trim()
+                    .trim_start_matches("Human:")
+                    .trim_start_matches("human:")
+                    .trim_start_matches("Assistant:")
+                    .trim_start_matches("assistant:")
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .map(|line| line.trim().to_string())
+            .find(|line| {
+                !line.is_empty()
+                    && !(line.starts_with('<') && line.ends_with('>'))
+                    && !line.starts_with(
+                        "(This is a summary of earlier conversation turns for context.",
+                    )
+                    && !line.contains("Tool calls shown here were already executed")
+            })
+            .unwrap_or_default()
+    }
+
     /// Get the Claude Code projects directory (~/.claude/projects/)
     fn claude_projects_dir() -> Option<PathBuf> {
         dirs::home_dir().map(|h| h.join(".claude").join("projects"))
@@ -132,8 +266,10 @@ impl ClaudeSessionService {
                     // Always bind to the currently requested project path.
                     // `projectPath` in sessions-index.json can be stale and break PTY cwd/resume.
                     project_path: project_path.to_string(),
-                    summary: entry.summary.unwrap_or_default(),
-                    first_prompt: entry.first_prompt.unwrap_or_default(),
+                    summary: Self::sanitize_session_label(&entry.summary.unwrap_or_default()),
+                    first_prompt: Self::sanitize_session_label(
+                        &entry.first_prompt.unwrap_or_default(),
+                    ),
                     message_count: entry.message_count.unwrap_or(0),
                     created: entry.created.unwrap_or_default(),
                     modified: entry.modified.unwrap_or_default(),
@@ -237,10 +373,12 @@ impl ClaudeSessionService {
                         // Extract first user prompt
                         if let Some(ref msg) = entry.message {
                             if let Some(ref content) = msg.content {
-                                first_prompt = match content {
-                                    serde_json::Value::String(s) => s.chars().take(200).collect(),
-                                    _ => content.to_string().chars().take(200).collect(),
-                                };
+                                first_prompt = Self::sanitize_session_label(
+                                    &Self::extract_text_from_json_value(content),
+                                )
+                                .chars()
+                                .take(200)
+                                .collect();
                             }
                         }
 
@@ -620,6 +758,81 @@ mod tests {
         std::env::remove_var("HOME");
 
         assert!(sessions.is_empty());
+
+        let _ = fs::remove_dir_all(temp_home);
+    }
+
+    #[test]
+    fn parse_jsonl_file_extracts_plain_text_from_structured_prompt_blocks() {
+        let _guard = storage_test_env_lock().lock().unwrap();
+        let temp_home = unique_temp_home("structured-jsonl-title");
+        let project_dir = temp_home.join(".claude/projects/-Users-mannix-Documents-Obsidian-Notes");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        let session_id = "structured-session";
+        let jsonl_path = project_dir.join(format!("{session_id}.jsonl"));
+        fs::write(
+            &jsonl_path,
+            r#"{"type":"user","timestamp":"2026-04-07T01:00:00Z","message":{"role":"user","content":[{"type":"text","text":"<conversation_history>\nEarlier context\n</conversation_history>\n\nReview API auth flow and summarize the next steps"}]}}
+{"type":"assistant","timestamp":"2026-04-07T01:01:00Z","message":{"role":"assistant","content":[{"type":"text","text":"Review the middleware and capture the follow-up work."}]}}
+"#,
+        )
+        .unwrap();
+
+        let session = ClaudeSessionService::parse_jsonl_file(
+            &jsonl_path,
+            session_id,
+            "/Users/mannix/Documents/Obsidian/Notes",
+        )
+        .unwrap();
+
+        assert_eq!(
+            session.first_prompt,
+            "Review API auth flow and summarize the next steps"
+        );
+
+        let _ = fs::remove_dir_all(temp_home);
+    }
+
+    #[test]
+    fn load_from_index_extracts_plain_text_from_structured_prompt_fields() {
+        let _guard = storage_test_env_lock().lock().unwrap();
+        let temp_home = unique_temp_home("structured-index-title");
+        let project_dir = temp_home.join(".claude/projects/-Users-mannix-Documents-Obsidian-Notes");
+        fs::create_dir_all(&project_dir).unwrap();
+
+        let session_id = "structured-index-session";
+        fs::write(project_dir.join(format!("{session_id}.jsonl")), "{}\n").unwrap();
+        let index_path = project_dir.join("sessions-index.json");
+        fs::write(
+            &index_path,
+            r#"{
+  "version": 1,
+  "originalPath": "/Users/mannix/Documents/Obsidian/Notes",
+      "entries": [
+    {
+      "sessionId": "structured-index-session",
+      "summary": "",
+      "firstPrompt": "[{\"type\":\"text\",\"text\":\"<conversation_summary>\nCheck project status\n</conversation_summary>\"}]",
+      "messageCount": 2,
+      "created": "2026-04-07T01:00:00Z",
+      "modified": "2026-04-07T01:05:00Z",
+      "projectPath": "/Users/mannix/Documents/Obsidian/Notes",
+      "isSidechain": false
+    }
+  ]
+}"#,
+        )
+        .unwrap();
+
+        let sessions = ClaudeSessionService::load_from_index(
+            &index_path,
+            "/Users/mannix/Documents/Obsidian/Notes",
+        )
+        .unwrap();
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].first_prompt, "Check project status");
 
         let _ = fs::remove_dir_all(temp_home);
     }
